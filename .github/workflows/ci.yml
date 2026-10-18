@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    env:
+      HC_UUID_SEED: ci-only-uuid-seed-not-for-deployment
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.27.2"
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd internal tests/e2e)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Fuzz parsers and JSON encoding
+        run: |
+          go test ./internal/healthchecks -run '^$' -fuzz '^FuzzUnknownPing$' -fuzztime 5s
+          go test ./internal/healthchecks -run '^$' -fuzz '^FuzzWebhookJSON$' -fuzztime 5s
+      - name: Lint Dockerfile
+        uses: immanuwell/dockerfile-roast@1c87b2aa189338c24db4acde40864dae8994de8f # 1.7.0
+        with:
+          image-tag: "1.7.0@sha256:4f31be49f26804c0a2f8a0ab0ae578719e30376323e8fd5951c6dcc79a478b40"
+      - name: Build container
+        run: docker build --tag healthchecks-go:test .
+      - name: Validate example inside container
+        run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --env HC_UUID_SEED --volume "$PWD/config.example.yml:/config/config.yml:ro" healthchecks-go:test -check
+      - name: Compare Ping API with Healthchecks v4.4
+        run: |
+          go build -o /tmp/healthchecks-go ./cmd/healthchecks-go
+          HC_METRICS_KEY=ci-test-key /tmp/healthchecks-go -config config.example.yml -listen 127.0.0.1:18080 &
+          service_pid=$!
+          trap 'kill "$service_pid"; wait "$service_pid" || true' EXIT
+          for _ in $(seq 1 50); do
+            if curl --fail --silent http://127.0.0.1:18080/api/v3/status/; then break; fi
+            sleep 0.1
+          done
+          curl --fail --silent http://127.0.0.1:18080/api/v3/status/
+          CANDIDATE_URL=http://127.0.0.1:18080 bash tests/compatibility/run-upstream.sh
+
+  publish:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish image
+        id: image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=healthchecks-go
+          cache-to: type=gha,mode=max,scope=healthchecks-go
+      - name: Report published digest
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: echo "$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove old images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f
+        with:
+          package: ${{ github.event.repository.name }}
+          keep-n-tagged: 10
+          keep-n-untagged: 10
+          exclude-tags: latest
+          delete-partial-images: true

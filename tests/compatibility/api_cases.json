@@ -1,0 +1,24 @@
+{
+  "check_uuid": "11111111-1111-4111-8111-111111111111",
+  "unknown_uuid": "33333333-3333-4333-8333-333333333333",
+  "methods": ["GET", "HEAD", "POST"],
+  "cases": [
+    {"name": "success", "path": "/ping/{check}", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "success-with-trailing-slash", "path": "/ping/{check}/", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "start", "path": "/ping/{check}/start", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "fail", "path": "/ping/{check}/fail", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "log", "path": "/ping/{check}/log", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "exit-0", "path": "/ping/{check}/0", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "exit-1", "path": "/ping/{check}/1", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "exit-255", "path": "/ping/{check}/255", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "exit-256", "path": "/ping/{check}/256", "methods": ["GET", "HEAD", "POST"], "status": 400, "body": "invalid url format"},
+    {"name": "valid-rid", "path": "/ping/{check}/log?rid=550e8400-e29b-41d4-a716-446655440000", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "invalid-rid", "path": "/ping/{check}/log?rid=not-a-uuid", "methods": ["GET", "HEAD", "POST"], "status": 400, "body": "invalid uuid format"},
+    {"name": "mismatched-rid", "path": "/ping/{check}?rid=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "methods": ["GET", "HEAD", "POST"], "status": 200, "body": "OK"},
+    {"name": "trailing-slash-on-action", "path": "/ping/{check}/start/", "methods": ["GET"], "status": 404},
+    {"name": "malformed-uuid", "path": "/ping/not-a-uuid", "methods": ["GET"], "status": 404},
+    {"name": "malformed-extra-segment", "path": "/ping/{check}/start/extra", "methods": ["GET"], "status": 404},
+    {"name": "unknown-uuid", "path": "/ping/{unknown}", "methods": ["GET", "HEAD", "POST"], "status": 404, "body": "not found"},
+    {"name": "unknown-uuid-invalid-rid", "path": "/ping/{unknown}?rid=not-a-uuid", "methods": ["GET"], "status": 404, "body": "not found"}
+  ]
+}
