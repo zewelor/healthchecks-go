@@ -27,11 +27,10 @@ func ReadConfigFile(path string) ([]byte, error) {
 }
 
 type ConfigWatcher struct {
-	path      string
-	engine    *Engine
-	lookup    func(string) (string, bool)
-	last      []byte
-	lastError error
+	path   string
+	engine *Engine
+	lookup func(string) (string, bool)
+	last   []byte
 }
 
 func NewConfigWatcher(path string, e *Engine, lookup func(string) (string, bool)) *ConfigWatcher {
@@ -46,19 +45,19 @@ func (w *ConfigWatcher) Check() (bool, error) {
 		return false, err
 	}
 	if bytes.Equal(data, w.last) {
-		if w.lastError == nil {
-			w.engine.SetReloadError("")
-		}
-		return false, w.lastError
+		w.engine.SetReloadError("")
+		return false, nil
 	}
-	w.last = data
 	c, err := ParseConfig(data, w.lookup)
-	w.lastError = err
 	if err != nil {
 		w.engine.SetReloadError(err.Error())
 		return false, err
 	}
-	w.engine.Reload(c)
+	if err := w.engine.Reload(c); err != nil {
+		w.engine.SetReloadError(err.Error())
+		return false, err
+	}
+	w.last = data
 	return true, nil
 }
 

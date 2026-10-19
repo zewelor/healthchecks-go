@@ -99,3 +99,27 @@ func TestConfigReloadFollowsConfigMapSymlink(t *testing.T) {
 		t.Fatal("did not follow atomically replaced symlink")
 	}
 }
+
+func TestConfigReloadRevertToAppliedBytesClearsError(t *testing.T) {
+	e, _ := newTestEngine(t)
+	path := filepath.Join(t.TempDir(), "config.yml")
+	write := func(config string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(simpleConfig)
+	watcher := NewConfigWatcher(path, e, os.LookupEnv)
+	if _, err := watcher.Check(); err != nil {
+		t.Fatal(err)
+	}
+	write("checks: invalid")
+	if _, err := watcher.Check(); err == nil {
+		t.Fatal("invalid configuration accepted")
+	}
+	write(simpleConfig)
+	if _, err := watcher.Check(); err != nil || e.Info().ReloadError != "" {
+		t.Fatalf("reverting to applied YAML did not clear error: %v", err)
+	}
+}

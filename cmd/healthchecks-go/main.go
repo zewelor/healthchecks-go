@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -51,9 +52,18 @@ func run() error {
 		fmt.Println("Configuration is valid.")
 		return nil
 	}
+	listener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		return fmt.Errorf("HTTP server failed to listen: %w", err)
+	}
+	defer listener.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	e := healthchecks.NewEngine(c, time.Now)
+	e, err := healthchecks.OpenEngine(ctx, c, time.Now, os.LookupEnv)
+	if err != nil {
+		return err
+	}
+	defer e.Close()
 	w := healthchecks.NewConfigWatcher(*path, e, os.LookupEnv)
 	if _, err := w.Check(); err != nil {
 		return err
@@ -77,7 +87,9 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				e.Evaluate()
+				if err := e.Evaluate(); err != nil {
+					log.Printf("State evaluation failed: %v", err)
+				}
 			}
 		}
 	})
@@ -91,8 +103,8 @@ func run() error {
 			_ = server.Close()
 		}
 	})
-	log.Printf("Starting HTTP server on %s; state and history are in memory.", *listen)
-	err = server.ListenAndServe()
+	log.Printf("Starting HTTP server on %s; check state is stored in PostgreSQL.", *listen)
+	err = server.Serve(listener)
 	stop()
 	wg.Wait()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {

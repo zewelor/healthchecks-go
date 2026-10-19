@@ -28,8 +28,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ping(w, r)
 	case r.URL.Path == "/metrics":
 		h.metrics(w, r)
-	case r.URL.Path == "/api/v3/status/":
+	case r.URL.Path == "/api/v3/status/" || r.URL.Path == "/healthz":
 		if !readMethod(w, r) {
+			return
+		}
+		if r.URL.Path != "/healthz" && h.engine.Ready() != nil {
+			respond(w, r, 503, "database unavailable")
 			return
 		}
 		respond(w, r, 200, "OK")
@@ -118,7 +122,12 @@ func (h *handler) ping(w http.ResponseWriter, r *http.Request) {
 		in.Truncated = true
 	}
 	in.Body = string(body)
-	if !h.engine.Ping(parts[0], in) {
+	found, err := h.engine.Ping(parts[0], in)
+	if err != nil {
+		respond(w, r, 503, "state could not be saved")
+		return
+	}
+	if !found {
 		respond(w, r, 404, "not found")
 		return
 	}
@@ -143,13 +152,18 @@ func (h *handler) metrics(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	views, err := h.engine.snapshot()
+	if err != nil {
+		respond(w, r, 503, "state could not be refreshed")
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	if r.Method == "HEAD" {
 		return
 	}
 	_, _ = io.WriteString(w, "# HELP hc_check_up Whether the check is currently up (1 for yes, 0 for no).\n# TYPE hc_check_up gauge\n")
 	escape := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`)
-	for _, c := range h.engine.Snapshot() {
+	for _, c := range views {
 		value := 1
 		if c.Status == "down" {
 			value = 0

@@ -17,8 +17,27 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_USER: hc_test
+          POSTGRES_PASSWORD: local-test
+          POSTGRES_DB: hc_test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U hc_test -d hc_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       HC_UUID_SEED: ci-only-uuid-seed-not-for-deployment
+      HC_TEST_POSTGRES: "1"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "15432"
+      DB_NAME: hc_test
+      DB_USER: hc_test
+      DB_PASSWORD: local-test
+      DB_SSLMODE: disable
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

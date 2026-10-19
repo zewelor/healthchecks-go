@@ -1,7 +1,7 @@
 # healthchecks-go
 
 A small, self-hosted service for monitoring heartbeats and scheduled jobs.
-One Go process, YAML configuration, and bounded in-memory state and history.
+One Go process, YAML configuration, PostgreSQL state, and bounded in-memory ping logs.
 
 ## MVP scope
 
@@ -12,8 +12,8 @@ One Go process, YAML configuration, and bounded in-memory state and history.
 - One Prometheus metric family, `hc_check_up`, at `/metrics`.
 - One optional HTTP webhook with a configurable JSON body.
 
-The MVP runs as a single instance. Restarting it clears state and history.
-It has no database, accounts, management API, or built-in regional inhibition.
+The service runs as a single active instance. Check state and webhook progress survive restarts; recent ping logs do not.
+It has no accounts, management API, or built-in regional inhibition.
 
 ## Configuration
 
@@ -34,13 +34,15 @@ cp config.example.yml config.yml
 export HC_UUID_SEED="$(cat /proc/sys/kernel/random/uuid)"
 /tmp/healthchecks-go -config config.yml -check
 /tmp/healthchecks-go -config config.yml -list-ping-urls
-/tmp/healthchecks-go -config config.yml
+DB_HOST=localhost DB_NAME=healthchecks_go DB_USER=healthchecks DB_PASSWORD=local-password \
+  DB_SSLMODE=disable /tmp/healthchecks-go -config config.yml
 ```
 
 Generate `HC_UUID_SEED` once, save it in your deployment's secret configuration, and reuse it on every start.
 The example above creates a new seed; running that line again changes all automatically generated UUIDs.
 Open `http://localhost:8000/`. Send a success ping to `/ping/<uuid>` from the job being monitored.
-`-check` validates the complete configuration and required environment, then exits without starting a server.
+`-check` and `-list-ping-urls` validate YAML and its environment references without connecting to PostgreSQL.
+Database settings are required only when starting the server.
 Keep deployment configuration and credentials out of a public repository.
 
 ### Container
@@ -56,12 +58,48 @@ To build and run locally:
 docker build -t healthchecks-go:local .
 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -p 127.0.0.1:8000:8000 -e HC_UUID_SEED \
+  -e DB_HOST -e DB_PORT -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
   -v "$PWD/config-directory:/config:ro" healthchecks-go:local
 ```
 
 Place `config.yml` in the mounted directory, readable by UID 65532. Mount the directory to allow atomic file replacement.
 For Kubernetes ConfigMaps, use a directory mount without `subPath` and do not restart the Pod on configuration changes.
 Use one replica with a strategy that prevents overlapping independent instances, such as `Recreate`.
+
+### PostgreSQL
+
+The supported target is PostgreSQL 18 or later; integration tests run on PostgreSQL 18.
+SQL can use features available in 18 without compatibility workarounds for older versions.
+The current state model needs JSONB, transactions, upserts and advisory locks; it does not require extensions.
+
+The database and login role must already exist. Configure them with separate environment variables, so Kubernetes can reuse existing Secrets:
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `DB_HOST` | PostgreSQL hostname | required |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | Existing database name | required |
+| `DB_USER` | Login role | required |
+| `DB_PASSWORD` | Login password | required |
+| `DB_SSLMODE` | `require`, `verify-ca`, `verify-full`, or `disable` | `require` |
+
+For example, set `DB_NAME=healthchecks_go`, `DB_USER=healthchecks`, and source `DB_PASSWORD` through a namespace-local `secretKeyRef`.
+Use a direct PostgreSQL read/write endpoint, not a transaction-mode connection pooler.
+`require` encrypts the connection; use `verify-full` and a trusted CA when server identity verification is required.
+For a private endpoint without TLS, explicitly set `DB_SSLMODE=disable`.
+
+Use a dedicated database, for example `healthchecks_go`. Startup creates two tables in the standard `public` schema:
+`public.check_state` and `public.runtime`. The role must own this database (or have permission to create and use these tables).
+Queries qualify `public` explicitly; there is no custom schema parameter or change to database/role defaults.
+Keep the Python application's existing `healthchecks` database for rollback. The two applications can reuse the existing
+`healthchecks` role and password, but sharing the role does not provide access isolation between their databases.
+Keep this role and its credentials when cleaning up the Python installation. Backups must include the new database.
+An unsupported schema version stops startup; schema changes and application rollback need matching versions.
+There is no automatic import of Python runtime state: the first Go startup begins a new observation period.
+
+A session advisory lock allows only one active instance for this database. Use one replica and `Recreate`.
+The application reconnects after a database failure, reacquires the lock and reloads committed state before accepting changes.
+This release does not support multiple active workers. Confirm network access to PostgreSQL before deployment.
 
 ## Configuration reference
 
@@ -111,7 +149,7 @@ The first 16 digest bytes are formatted as [UUIDv8](https://www.rfc-editor.org/r
 with the standard version and variant bits. This algorithm is part of the ping URL compatibility contract.
 Case and whitespace in the name matter; schedule, tags, region, list order, and `public_url` do not affect the UUID.
 
-Changing the name or seed creates a new identity, ping URL, and in-memory state.
+Changing the name or seed creates a new identity, ping URL, and runtime state.
 To rename a check while keeping its identity, first copy its generated UUID into `uuid`.
 Two checks without explicit UUIDs cannot share a name; different explicit UUIDs may share a display name.
 All resolved UUIDs are checked for conflicts before configuration is applied.
@@ -144,7 +182,9 @@ Editing the body also allows failed deliveries to retry with the corrected paylo
 Explicit ports in `public_url` and `webhook.url` must be between 1 and 65535; an omitted port uses the scheme's default.
 
 YAML changes reload without losing state. Environment variable changes require a process restart.
-Reload is checked every five seconds. Invalid updates leave the previous configuration active and show a dashboard error.
+Reload is checked every five seconds. Invalid updates and failed database transactions leave the previous configuration active and show a dashboard error.
+A transient database failure retries the same YAML after recovery. Successful reload deletes removed checks and their pending notifications atomically.
+Removing and re-adding a UUID starts fresh state; an old HTTP completion cannot alter the new check.
 Tags and metadata can change without clearing check history. Names can change without resetting history when `uuid` is explicit.
 Changing metric labels can still reset external alerts.
 
@@ -159,17 +199,22 @@ Clients uploading very large bodies may see a closed connection even though the 
 Senders should respect `Ping-Body-Limit` and truncate logs before uploading them.
 History is limited to 20 events per check, with at most 128 configured checks.
 
-After startup, a check awaits its first signal until one interval plus grace, or the next cron occurrence plus grace.
+A newly configured check awaits its first signal until one interval plus grace, or the next cron occurrence plus grace.
 Explicit failure acts immediately. Grace also limits how long a started execution may run.
 `paused: true` keeps a check paused even if it receives pings. Unpausing starts a new observation period.
-Restart loses failures as well as history, and can interrupt the continuity of an external alert's `for` condition.
+Restart restores success deadlines, active runs, explicit failures and notification progress, then applies the current YAML.
+Ping bodies/history are process-local and reset on restart. A successful ping response is sent only after the state transaction commits.
+Database failures return `503`; clients should retry. A connection loss during commit can make the result uncertain, so a retried ping may be recorded twice.
 
 `/metrics` exports `hc_check_up` with
 `name`, `tags`, `unique_key`, `region`, and `depends_on_regions` labels. Only `down` maps to 0; other states map to 1.
 When `HC_METRICS_KEY` is nonempty, requests require `Authorization: Bearer <HC_METRICS_KEY>`.
 Region dependencies are sorted and comma-separated. They do not suppress state or direct webhook notifications;
 use external alert routing for inhibition and maintenance silences.
-`/api/v3/status/` returns `200 OK` when the service is ready, independently of webhook delivery.
+`/api/v3/status/` checks PostgreSQL availability and returns `503` during a database outage, independently of webhook delivery.
+Use `/healthz` for process-only liveness, so a database outage does not cause restart loops.
+The dashboard retains the last committed view and shows a database error when it cannot refresh it.
+`/metrics` returns `503` instead of publishing stale check states when PostgreSQL cannot be reached.
 
 Webhooks notify on down and recover after a successfully reported outage. Delivery runs independently of ping handling,
 retries temporary failures and HTTP 429/5xx, and exposes persistent errors on the check page.
@@ -177,8 +222,9 @@ Pending recovery remains eligible during grace; a new down state supersedes an u
 A valid `Retry-After` pauses all deliveries to the shared webhook until the requested time, even when longer than five minutes.
 The receiver's pause survives removal of the originating check after its HTTP response has completed.
 Without it, exponential backoff is capped at five minutes per check. Changing the webhook URL clears the previous receiver's pause.
-Retry deadlines and pending notifications are in memory and are lost on restart.
-A timeout after recipient acceptance may produce a duplicate message. There is no durable delivery queue.
+Retry deadlines and pending notifications survive restart. Each HTTP attempt is recorded before sending, with its exact payload.
+An attempt with an uncertain outcome is replayed after restart, even if the check recovered meanwhile, then recovery follows a successful down.
+A timeout or crash after recipient acceptance may produce a duplicate message. There is no exactly-once guarantee or separate queue.
 
 ## Development and compatibility
 
@@ -193,3 +239,14 @@ webhook retries and in-flight recovery, bounded history, and HTML escaping.
 See [the isolated compatibility harness](tests/compatibility/README.md) for comparison with pinned Healthchecks v4.4,
 including the shared cron cases. DST differences are documented in the harness.
 This is a defined Ping API subset, not a full Healthchecks API replacement.
+
+PostgreSQL integration tests require an explicitly disposable, local database named `hc_test`.
+They reset only `public.check_state` and `public.runtime` and create a sentinel fixture in `public`:
+
+```sh
+HC_TEST_POSTGRES=1 DB_HOST=127.0.0.1 DB_PORT=15432 DB_NAME=hc_test \
+  DB_USER=hc_test DB_PASSWORD=local-test DB_SSLMODE=disable go test -race ./...
+```
+
+These tests exercise real PostgreSQL transactions and network interruptions, restart/replay,
+configuration removal and retry, and rejection of a second active instance.

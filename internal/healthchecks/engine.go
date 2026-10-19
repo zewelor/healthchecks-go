@@ -1,6 +1,8 @@
 package healthchecks
 
 import (
+	"context"
+	"crypto/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -38,9 +40,12 @@ type CheckView struct {
 type ServerView struct {
 	Started                  time.Time
 	ReloadError, WebhookName string
+	StorageError             string
 }
 
 type checkState struct {
+	incarnation                             string
+	pending                                 *pendingDelivery
 	config                                  CheckConfig
 	observed                                time.Time
 	lastSuccess, lastPing, started, nextDue time.Time
@@ -59,15 +64,19 @@ type checkState struct {
 }
 
 type Engine struct {
-	mu               sync.Mutex
-	checks           map[string]*checkState
-	now              func() time.Time
-	started          time.Time
-	publicURL        string
-	webhook          *WebhookConfig
-	webhookNotBefore time.Time
-	reloadError      string
-	wake             chan struct{}
+	mu                   sync.Mutex
+	checks               map[string]*checkState
+	now                  func() time.Time
+	started              time.Time
+	publicURL            string
+	webhook              *WebhookConfig
+	webhookNotBefore     time.Time
+	reloadError          string
+	storageError         string
+	store                *postgresStore
+	applied              *Config
+	targetHash, bodyHash string
+	wake                 chan struct{}
 }
 
 func NewEngine(c *Config, now func() time.Time) *Engine {
@@ -83,13 +92,17 @@ func (e *Engine) signal() {
 	}
 }
 
-func (e *Engine) Reload(c *Config) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *Engine) Reload(c *Config) error {
+	return e.transact(context.Background(), func() { e.reloadLocked(c) })
+}
+
+func (e *Engine) reloadLocked(c *Config) {
 	now := e.now()
 	checks := make(map[string]*checkState, len(c.Checks))
-	webhookChanged := !sameWebhookTarget(e.webhook, c.Webhook)
-	bodyChanged := e.webhook != nil && c.Webhook != nil && e.webhook.Body != c.Webhook.Body
+	target, body := webhookHashes(c.Webhook)
+	webhookChanged := e.targetHash != target
+	bodyChanged := e.bodyHash != body
+	e.targetHash, e.bodyHash = target, body
 	if webhookChanged {
 		e.webhookNotBefore = time.Time{}
 	}
@@ -97,7 +110,7 @@ func (e *Engine) Reload(c *Config) {
 		definition.DependsOnRegions = append([]string{}, definition.DependsOnRegions...)
 		s := e.checks[definition.UUID]
 		if s == nil {
-			s = &checkState{observed: now, status: "awaiting", revision: 1}
+			s = &checkState{incarnation: rand.Text(), observed: now, status: "awaiting", revision: 1}
 		}
 		if s.config.Paused && !definition.Paused {
 			s.observed = now
@@ -114,10 +127,10 @@ func (e *Engine) Reload(c *Config) {
 		if resetDelivery || bodyChanged {
 			if resetDelivery {
 				if s.flight != nil {
-					s.flight.cancel()
 					s.flight = nil
 				}
 				s.notifiedDown = false
+				s.pending = nil
 			}
 			// A new payload supersedes old failures, while an in-flight success
 			// at the same recipient still counts as a delivered notification.
@@ -135,24 +148,13 @@ func (e *Engine) Reload(c *Config) {
 		s.nextDue = definition.next(base)
 		checks[definition.UUID] = s
 	}
-	for id, s := range e.checks {
-		if checks[id] == nil && s.flight != nil {
-			s.flight.cancel()
-		}
-	}
 	e.checks = checks
 	e.publicURL = c.PublicURL
 	e.webhook = c.Webhook
+	e.applied = c
 	e.reloadError = ""
 	e.evaluateLocked(now)
 	e.signal()
-}
-
-func sameWebhookTarget(a, b *WebhookConfig) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.URL == b.URL
 }
 
 func (e *Engine) SetReloadError(message string) {
@@ -164,16 +166,20 @@ func (e *Engine) SetReloadError(message string) {
 func (e *Engine) Info() ServerView {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	v := ServerView{Started: e.started, ReloadError: e.reloadError}
+	v := ServerView{Started: e.started, ReloadError: e.reloadError, StorageError: e.storageError}
 	if e.webhook != nil {
 		v.WebhookName = e.webhook.Name
 	}
 	return v
 }
 
-func (e *Engine) Ping(id string, in Input) bool {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *Engine) Ping(id string, in Input) (bool, error) {
+	found := false
+	err := e.transact(context.Background(), func() { found = e.pingLocked(id, in) })
+	return found, err
+}
+
+func (e *Engine) pingLocked(id string, in Input) bool {
 	s := e.checks[id]
 	if s == nil {
 		return false
@@ -234,7 +240,9 @@ func (e *Engine) Ping(id string, in Input) bool {
 	return true
 }
 
-func (e *Engine) Evaluate() { e.mu.Lock(); defer e.mu.Unlock(); e.evaluateLocked(e.now()) }
+func (e *Engine) Evaluate() error {
+	return e.transact(context.Background(), func() { e.evaluateLocked(e.now()) })
+}
 
 func (e *Engine) evaluateLocked(now time.Time) {
 	for _, s := range e.checks {
@@ -276,9 +284,14 @@ func (e *Engine) evaluateLocked(now time.Time) {
 }
 
 func (e *Engine) Snapshot() []CheckView {
+	views, _ := e.snapshot()
+	return views
+}
+
+func (e *Engine) snapshot() ([]CheckView, error) {
+	err := e.Evaluate()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.evaluateLocked(e.now())
 	views := make([]CheckView, 0, len(e.checks))
 	for _, s := range e.checks {
 		views = append(views, s.view())
@@ -292,7 +305,7 @@ func (e *Engine) Snapshot() []CheckView {
 		}
 		return strings.ToLower(views[i].Name) < strings.ToLower(views[j].Name)
 	})
-	return views
+	return views, err
 }
 
 func (s *checkState) view() CheckView {

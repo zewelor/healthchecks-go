@@ -66,8 +66,8 @@ func TestDashboardIndexUsesSafeKeysAndShowsOneCardPerCheck(t *testing.T) {
 	if strings.Contains(body, `<img src=x`) || !strings.Contains(body, `&lt;img`) {
 		t.Fatal("check name was not HTML escaped")
 	}
-	if !strings.Contains(strings.ToLower(body), "in-memory") || !strings.Contains(strings.ToLower(body), "reload") || strings.Contains(body, `<invalid config>`) || !strings.Contains(body, `&lt;invalid config&gt;`) {
-		t.Fatalf("dashboard should explain process-local state and surface escaped reload errors (in-memory=%t reload=%t escaped=%t raw=%t)", strings.Contains(body, "in-memory"), strings.Contains(body, "reload"), strings.Contains(body, `&lt;invalid config&gt;`), strings.Contains(body, `<invalid config>`))
+	if !strings.Contains(strings.ToLower(body), "ping logs") || !strings.Contains(strings.ToLower(body), "reload") || strings.Contains(body, `<invalid config>`) || !strings.Contains(body, `&lt;invalid config&gt;`) {
+		t.Fatalf("dashboard should explain process-local logs and surface escaped reload errors (logs=%t reload=%t escaped=%t raw=%t)", strings.Contains(body, "ping logs"), strings.Contains(body, "reload"), strings.Contains(body, `&lt;invalid config&gt;`), strings.Contains(body, `<invalid config>`))
 	}
 }
 

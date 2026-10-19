@@ -28,7 +28,7 @@ func TestDeadlinesStartAndLogDoNotHideFailure(t *testing.T) {
 	if v := onlyCheck(t, e); v.Status != "awaiting" || !v.LastSuccess.IsZero() {
 		t.Fatalf("initial state: %+v", v)
 	}
-	if !e.Ping(testUUID, Input{Kind: "success"}) {
+	if found, err := e.Ping(testUUID, Input{Kind: "success"}); !found || err != nil {
 		t.Fatal("unknown check")
 	}
 	*now = now.Add(4 * time.Minute)

@@ -3,6 +3,7 @@ package healthchecks
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -20,19 +21,17 @@ const (
 	webhookRetryMaximum    = 5 * time.Minute
 )
 
-// delivery marks the one request currently owned by a check. Keeping the
-// state pointer and flight pointer lets completion reject results from a
-// removed or replaced check without depending on a revision that may have
-// advanced while the request was in flight.
+// delivery identifies a persisted notification intent across state copies and reconnects.
 type delivery struct {
-	cancel   context.CancelFunc
-	ctx      context.Context
-	checkID  string
-	state    *checkState
-	revision uint64
-	status   string
-	url      string
-	body     []byte
+	token, incarnation string
+	completedAt        time.Time
+	cancel             context.CancelFunc
+	ctx                context.Context
+	checkID            string
+	revision           uint64
+	status             string
+	url                string
+	body               []byte
 }
 
 // RunWebhook runs the engine's single webhook delivery worker until ctx is
@@ -53,7 +52,13 @@ func (e *Engine) RunWebhook(ctx context.Context) {
 		d, wait := e.prepareDelivery(ctx)
 		if d != nil {
 			status, retryAfter, err := deliverWebhook(client, d)
-			e.finishDelivery(d, status, retryAfter, err)
+			for e.finishDelivery(d, status, retryAfter, err) != nil {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+			}
 			continue
 		}
 
@@ -81,8 +86,16 @@ func (e *Engine) RunWebhook(ctx context.Context) {
 // prepareDelivery evaluates current state and starts the next eligible
 // request. It returns the shortest delay until a retry when nothing is ready.
 func (e *Engine) prepareDelivery(parent context.Context) (*delivery, time.Duration) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	var d *delivery
+	var wait time.Duration
+	err := e.transact(parent, func() { d, wait = e.prepareDeliveryLocked(parent) })
+	if err != nil {
+		return nil, time.Second
+	}
+	return d, wait
+}
+
+func (e *Engine) prepareDeliveryLocked(parent context.Context) (*delivery, time.Duration) {
 	if parent.Err() != nil {
 		return nil, 0
 	}
@@ -96,6 +109,15 @@ func (e *Engine) prepareDelivery(parent context.Context) (*delivery, time.Durati
 		if !s.config.Notify || s.config.Paused || e.webhook == nil || s.flight != nil {
 			continue
 		}
+		if now.Before(s.nextAttempt) {
+			if earliest.IsZero() || s.nextAttempt.Before(earliest) {
+				earliest = s.nextAttempt
+			}
+			continue
+		}
+		if s.pending != nil {
+			return e.startDelivery(parent, id, s), 0
+		}
 		status := ""
 		switch {
 		case s.status == "down" && !s.notifiedDown:
@@ -106,12 +128,6 @@ func (e *Engine) prepareDelivery(parent context.Context) (*delivery, time.Durati
 			continue
 		}
 		if s.failedRevision == s.revision {
-			continue
-		}
-		if now.Before(s.nextAttempt) {
-			if earliest.IsZero() || s.nextAttempt.Before(earliest) {
-				earliest = s.nextAttempt
-			}
 			continue
 		}
 
@@ -134,24 +150,21 @@ func (e *Engine) prepareDelivery(parent context.Context) (*delivery, time.Durati
 			s.failedRevision = s.revision
 			continue
 		}
-		requestCtx, cancel := context.WithCancel(parent)
-		d := &delivery{
-			cancel:   cancel,
-			ctx:      requestCtx,
-			checkID:  id,
-			state:    s,
-			revision: s.revision,
-			status:   status,
-			url:      e.webhook.URL,
-			body:     body,
-		}
-		s.flight = d
-		return d, 0
+		s.pending = &pendingDelivery{ID: rand.Text(), Revision: s.revision, Status: status, Body: body}
+		return e.startDelivery(parent, id, s), 0
 	}
 	if earliest.IsZero() {
 		return nil, 0
 	}
 	return nil, earliest.Sub(now)
+}
+
+func (e *Engine) startDelivery(parent context.Context, id string, s *checkState) *delivery {
+	requestCtx, cancel := context.WithCancel(parent)
+	p := s.pending
+	d := &delivery{cancel: cancel, ctx: requestCtx, checkID: id, incarnation: s.incarnation, token: p.ID, revision: p.Revision, status: p.Status, url: e.webhook.URL, body: p.Body}
+	s.flight = d
+	return d
 }
 
 func deliverWebhook(client *http.Client, d *delivery) (status int, retryAfter string, requestErr error) {
@@ -171,37 +184,43 @@ func deliverWebhook(client *http.Client, d *delivery) (status int, retryAfter st
 	return resp.StatusCode, resp.Header.Get("Retry-After"), nil
 }
 
-func (e *Engine) finishDelivery(d *delivery, status int, retryAfter string, requestErr error) {
+func (e *Engine) finishDelivery(d *delivery, status int, retryAfter string, requestErr error) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	now := e.now()
+	if d.completedAt.IsZero() {
+		d.completedAt = e.now()
+	}
+	e.mu.Unlock()
+	return e.transact(context.Background(), func() { e.finishDeliveryLocked(d, status, retryAfter, requestErr) })
+}
+
+func (e *Engine) finishDeliveryLocked(d *delivery, status int, retryAfter string, requestErr error) {
 	retryable := requestErr != nil || status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
 	receiverDelay := time.Duration(-1)
 	// Receiver-level feedback survives removal of the originating check. Ignore
 	// responses from a previous URL and cancellations without an HTTP response.
 	if retryable && requestErr == nil && e.webhook != nil && e.webhook.URL == d.url {
-		receiverDelay = retryAfterDelay(retryAfter, now)
+		receiverDelay = retryAfterDelay(retryAfter, d.completedAt)
 		if receiverDelay >= 0 {
-			if deadline := now.Add(receiverDelay); deadline.After(e.webhookNotBefore) {
+			if deadline := d.completedAt.Add(receiverDelay); deadline.After(e.webhookNotBefore) {
 				e.webhookNotBefore = deadline
 			}
 		}
 	}
 	s := e.checks[d.checkID]
-	if s != d.state || s.flight != d {
+	if s == nil || s.incarnation != d.incarnation || s.pending == nil || s.pending.ID != d.token {
 		d.cancel()
 		return
 	}
 	wasCanceled := d.ctx.Err() != nil
 	isSuccess := requestErr == nil && status >= http.StatusOK && status < http.StatusMultipleChoices
 	s.flight = nil
-	d.cancel()
 	if wasCanceled && !isSuccess {
 		// Shutdown cancellation is not a delivery failure. A future worker can
 		// resume this state; a reload has already detached the flight above.
 		e.signal()
 		return
 	}
+	s.pending = nil
 	if isSuccess {
 		s.deliveryError = ""
 		s.attempts = 0
@@ -235,7 +254,7 @@ func (e *Engine) finishDelivery(d *delivery, status int, retryAfter string, requ
 		} else {
 			s.deliveryError = "webhook request failed; retry scheduled"
 		}
-		s.nextAttempt = now.Add(delay)
+		s.nextAttempt = d.completedAt.Add(delay)
 		e.signal()
 		return
 	}

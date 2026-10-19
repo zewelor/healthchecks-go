@@ -134,6 +134,7 @@ const dashboardHTML = `<!doctype html>
         <div class="detail-status"><span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span><button class="refresh-toggle" id="refresh-toggle" type="button" aria-pressed="false">Pause auto-refresh</button></div>
       </header>
       <main id="main">
+        {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
         <section class="panel detail-panel" aria-labelledby="state-heading">
           <div class="detail-header"><div><p class="eyebrow">Current state</p><h2 id="state-heading">{{.Current.Status}}</h2></div></div>
@@ -170,7 +171,7 @@ const dashboardHTML = `<!doctype html>
             </div>
           {{else}}<p class="empty">No events have been received for this check.</p>{{end}}
         </section>
-        <p class="footer">Auto-refresh runs every 15 seconds by default. Pause it while reading logs. State is held in this process and resets when it restarts.</p>
+        <p class="footer">Auto-refresh runs every 15 seconds by default. Pause it while reading logs. Check state survives restarts; displayed ping logs reset on restart.</p>
       </main>
     {{else}}
       <header class="topline">
@@ -185,7 +186,8 @@ const dashboardHTML = `<!doctype html>
           <div class="metric"><span class="metric-label">In grace</span><span class="metric-value status-grace">{{.Grace}}</span></div>
           <div class="metric"><span class="metric-label">Awaiting / paused</span><span class="metric-value">{{.Awaiting}} / {{.Paused}}</span></div>
         </section>
-        <div class="notice"><strong>In-memory, process-local state.</strong> This history and timing reset when the server process restarts. Process started {{formatTime .Info.Started}}.</div>
+        <div class="notice"><strong>Recent ping logs are held in memory.</strong> Logs reset when the server process restarts. Process started {{formatTime .Info.Started}}.</div>
+        {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
         <div class="section-heading"><h2>Configured checks</h2><span class="muted">Down checks appear first</span></div>
         {{if .Checks}}
@@ -205,7 +207,7 @@ const dashboardHTML = `<!doctype html>
             {{end}}
           </section>
         {{else}}<p class="empty">No checks are configured.</p>{{end}}
-        <p class="footer">Auto-refresh runs every 15 seconds by default. State is held in this process and resets when it restarts.</p>
+        <p class="footer">Auto-refresh runs every 15 seconds by default. Check state survives restarts; displayed ping logs reset on restart.</p>
       </main>
     {{end}}
   </div>
