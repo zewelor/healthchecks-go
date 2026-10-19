@@ -34,12 +34,6 @@ var dashboardTemplate = template.Must(template.New("dashboard").Funcs(template.F
 			return "unknown"
 		}
 	},
-	"region": func(value string) string {
-		if value == "" {
-			return "Not set"
-		}
-		return value
-	},
 }).Parse(dashboardHTML))
 
 const dashboardHTML = `<!doctype html>
@@ -141,7 +135,6 @@ const dashboardHTML = `<!doctype html>
           {{if .Current.Reason}}<p class="reason">{{.Current.Reason}}</p>{{end}}
           <div class="detail-grid">
             <div class="detail-fact"><strong>Schedule</strong><span>{{.Current.Schedule}}</span></div>
-            <div class="detail-fact"><strong>Region</strong><span>{{region .Current.Region}}</span></div>
             <div class="detail-fact"><strong>Running</strong><span>{{if .Current.Started.IsZero}}No{{else}}Yes · started {{formatTime .Current.Started}}{{end}}</span></div>
             <div class="detail-fact"><strong>Last success</strong><span>{{formatTime .Current.LastSuccess}}</span></div>
             <div class="detail-fact"><strong>Last ping</strong><span>{{formatTime .Current.LastPing}}</span></div>
@@ -195,7 +188,7 @@ const dashboardHTML = `<!doctype html>
             {{range .Checks}}
               <article class="check-card status-{{statusClass .Status}}" data-status="{{.Status}}">
                 <div class="card-top"><h3 class="check-name"><a class="check-link" href="/checks/{{.Key}}">{{.Name}}</a></h3><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
-                <div class="meta-row"><span class="tag">Region: {{region .Region}}</span>{{if .Tags}}<span class="tag">{{.Tags}}</span>{{end}}</div>
+                {{if .Tags}}<div class="meta-row"><span class="tag">{{.Tags}}</span></div>{{end}}
                 <dl class="facts">
                   <div><dt>Last success</dt><dd>{{formatTime .LastSuccess}}</dd></div>
                   <div><dt>Next due</dt><dd>{{formatTime .NextDue}}</dd></div>

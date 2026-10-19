@@ -28,7 +28,7 @@ type Event struct {
 }
 
 type CheckView struct {
-	Key, Name, Tags, Region, Status, Reason, Schedule string
+	Key, Name, Tags, Status, Reason, Schedule         string
 	DependsOnRegions                                  []string
 	LastSuccess, LastPing, Started, NextDue, Deadline time.Time
 	Duration                                          *time.Duration
@@ -322,7 +322,7 @@ func (s *checkState) view() CheckView {
 	for i, event := range s.history {
 		events[len(events)-1-i] = event
 	}
-	return CheckView{Key: c.Key, Name: c.Name, Tags: c.Tags, Region: c.Region, DependsOnRegions: append([]string{}, c.DependsOnRegions...),
+	return CheckView{Key: c.Key, Name: c.Name, Tags: c.Tags, DependsOnRegions: append([]string{}, c.DependsOnRegions...),
 		Status: s.status, Reason: s.reason, Schedule: schedule, LastSuccess: s.lastSuccess, LastPing: s.lastPing, Started: s.started,
 		NextDue: s.nextDue, Deadline: deadline, Duration: s.duration, Events: events, Notify: c.Notify, DeliveryError: s.deliveryError}
 }

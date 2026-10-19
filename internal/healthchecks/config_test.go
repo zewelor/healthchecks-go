@@ -42,6 +42,7 @@ func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 		"null boolean":           strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    notify: null", 1),
 		"numeric name":           strings.Replace(simpleConfig, "name: Heartbeat", "name: 123", 1),
 		"unknown field":          strings.Replace(simpleConfig, "every: 5m", "period: 5m", 1),
+		"obsolete region field":  strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    region: region-a", 1),
 		"duplicate field":        strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    every: 6m", 1),
 		"both schedules":         strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    cron: '* * * * *'", 1),
 		"zero grace":             strings.Replace(simpleConfig, "grace: 1m", "grace: 0s", 1),

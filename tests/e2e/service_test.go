@@ -62,12 +62,12 @@ func TestExplicitIdentityAcrossReloads(t *testing.T) {
 	if ping(id, "/fail") != 200 {
 		t.Fatal("configured UUID ping rejected")
 	}
-	config = strings.Replace(config, "every: 5m", "every: 10m\n    region: region-a", 1)
+	config = strings.Replace(config, "every: 5m", "every: 10m\n    depends_on_regions: [region-a]", 1)
 	replace(config)
 	if _, err := w.Check(); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.Snapshot()[0]; got.Status != "down" || len(got.Events) != 1 || got.Region != "region-a" {
+	if got := e.Snapshot()[0]; got.Status != "down" || len(got.Events) != 1 || len(got.DependsOnRegions) != 1 || got.DependsOnRegions[0] != "region-a" {
 		t.Fatalf("metadata reload lost check state: %+v", got)
 	}
 	replace(config + strings.Split(config, "checks:\n")[1])
@@ -206,7 +206,7 @@ checks:
 		t.Fatalf("attempts: %d", attempts.Load())
 	}
 	status, metrics := call("GET", "/metrics", "", "test-token")
-	if status != 200 || !strings.Contains(metrics, `} 0`) || !strings.Contains(metrics, `depends_on_regions="region-a,region-b"`) || strings.Contains(metrics, uuid) {
+	if status != 200 || !strings.Contains(metrics, `} 0`) || !strings.Contains(metrics, `depends_on_regions="region-a,region-b"`) || strings.Contains(metrics, `,region="`) || strings.Contains(metrics, uuid) {
 		t.Fatal(metrics)
 	}
 	view := e.Snapshot()[0]

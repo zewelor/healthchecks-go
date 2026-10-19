@@ -25,7 +25,6 @@ checks:
     every: 5m
     grace: 1m
     notify: true
-    region: europe-west
     depends_on_regions: [us-east]
   - uuid: 22222222-2222-4222-8222-222222222222
     name: Queue worker
@@ -95,10 +94,13 @@ func TestDashboardDetailShowsScheduleDependenciesWebhookAndEscapedEvents(t *test
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	for _, want := range []string{"Every 5m", "europe-west", "us-east", "Incident desk", "run-123", "log", "heartbeat", "Exit code: 2", "Duration: 0s", "Log was truncated"} {
+	for _, want := range []string{"Every 5m", "us-east", "Incident desk", "run-123", "log", "heartbeat", "Exit code: 2", "Duration: 0s", "Log was truncated"} {
 		if !strings.Contains(strings.ToLower(body), strings.ToLower(want)) {
 			t.Errorf("detail page missing %q", want)
 		}
+	}
+	if strings.Contains(body, "<strong>Region</strong>") {
+		t.Fatal("detail page shows removed region field")
 	}
 	if strings.Contains(body, `<script>alert`) || !strings.Contains(body, `&lt;script&gt;`) {
 		t.Fatal("event log body was not HTML escaped")

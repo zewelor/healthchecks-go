@@ -26,7 +26,6 @@ checks:
     every: 5m
     grace: 1m
     notify: true
-    region: az1
     depends_on_regions: [az2]
 `, endpoint, testUUID)
 	return NewEngine(parseTestConfig(t, config), time.Now)
@@ -126,6 +125,9 @@ func TestWebhookWorkerSkipsInitialRecoveryAndCoalescesDownUp(t *testing.T) {
 		t.Fatalf("event detail URL does not use unique_key: %+v", got[0])
 	}
 	encodedEvent := string(mustJSON(t, got[0]))
+	if !strings.Contains(encodedEvent, `"depends_on_regions":["az2"]`) || strings.Contains(encodedEvent, `"region":`) {
+		t.Fatalf("webhook region metadata: %s", encodedEvent)
+	}
 	if strings.Contains(encodedEvent, testUUID) || strings.Contains(encodedEvent, "secret-value") {
 		t.Fatal("webhook payload disclosed the check UUID or target URL credentials")
 	}

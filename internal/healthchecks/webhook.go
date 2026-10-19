@@ -137,7 +137,6 @@ func (e *Engine) prepareDeliveryLocked(parent context.Context) (*delivery, time.
 			Name:             s.config.Name,
 			Tags:             strings.Fields(s.config.Tags),
 			UniqueKey:        s.config.Key,
-			Region:           s.config.Region,
 			DependsOnRegions: append([]string{}, s.config.DependsOnRegions...),
 			Reason:           s.reason,
 			Time:             now,

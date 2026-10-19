@@ -50,7 +50,6 @@ type CheckConfig struct {
 	Grace            string   `yaml:"grace"`
 	Paused           bool     `yaml:"paused"`
 	Notify           bool     `yaml:"notify"`
-	Region           string   `yaml:"region"`
 	DependsOnRegions []string `yaml:"depends_on_regions"`
 	Key              string   `yaml:"-"`
 	interval         time.Duration
@@ -70,7 +69,6 @@ type WebhookEvent struct {
 	Name             string    `json:"name"`
 	Tags             []string  `json:"tags"`
 	UniqueKey        string    `json:"unique_key"`
-	Region           string    `json:"region"`
 	DependsOnRegions []string  `json:"depends_on_regions"`
 	Reason           string    `json:"reason"`
 	Time             time.Time `json:"time"`
@@ -211,9 +209,6 @@ func (c *CheckConfig) validate() error {
 		if err != nil {
 			return err
 		}
-	}
-	if c.Region != "" && !regionPattern.MatchString(c.Region) {
-		return errors.New("invalid region identifier")
 	}
 	if len(c.DependsOnRegions) > 32 {
 		return errors.New("too many region dependencies")

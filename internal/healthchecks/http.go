@@ -169,6 +169,6 @@ func (h *handler) metrics(w http.ResponseWriter, r *http.Request) {
 			value = 0
 		}
 		sort.Strings(c.DependsOnRegions)
-		_, _ = fmt.Fprintf(w, "hc_check_up{name=\"%s\",tags=\"%s\",unique_key=\"%s\",region=\"%s\",depends_on_regions=\"%s\"} %d\n", escape.Replace(c.Name), escape.Replace(c.Tags), c.Key, c.Region, strings.Join(c.DependsOnRegions, ","), value)
+		_, _ = fmt.Fprintf(w, "hc_check_up{name=\"%s\",tags=\"%s\",unique_key=\"%s\",depends_on_regions=\"%s\"} %d\n", escape.Replace(c.Name), escape.Replace(c.Tags), c.Key, strings.Join(c.DependsOnRegions, ","), value)
 	}
 }

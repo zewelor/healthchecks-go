@@ -103,7 +103,7 @@ This release does not support multiple active workers. Confirm network access to
 Each check requires `uuid`, `name`, `grace`, and exactly one of `every` or `cron`.
 Durations use Go syntax, such as `5m`, `1h30m`, and `24h`. Cron time zones default to UTC; intervals measure elapsed time.
 Use `UTC` or an explicit IANA time zone such as `Europe/London`. Host-dependent `Local` is rejected.
-Optional fields are `tags`, `region`, `depends_on_regions`, `paused`, and `notify`.
+Optional fields are `tags`, `depends_on_regions`, `paused`, and `notify`.
 Tags are space-separated text. Region dependencies are metadata for external alert routing.
 
 Cron uses a deliberately small five-field subset: minute, hour, day-of-month, month, day-of-week.
@@ -195,7 +195,7 @@ Ping bodies/history are process-local and reset on restart. A successful ping re
 Database failures return `503`; clients should retry. A connection loss during commit can make the result uncertain, so a retried ping may be recorded twice.
 
 `/metrics` exports `hc_check_up` with
-`name`, `tags`, `unique_key`, `region`, and `depends_on_regions` labels. Only `down` maps to 0; other states map to 1.
+`name`, `tags`, `unique_key`, and `depends_on_regions` labels. Only `down` maps to 0; other states map to 1.
 When `HC_METRICS_KEY` is nonempty, requests require `Authorization: Bearer <HC_METRICS_KEY>`.
 Region dependencies are sorted and comma-separated. They do not suppress state or direct webhook notifications;
 use external alert routing for inhibition and maintenance silences.
