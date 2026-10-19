@@ -8,7 +8,6 @@ import (
 
 const testUUID = "11111111-1111-4111-8111-111111111111"
 const otherUUID = "22222222-2222-4222-8222-222222222222"
-const testUUIDSeed = "0123456789abcdef0123456789abcdef"
 
 const simpleConfig = `public_url: http://localhost:8000
 checks:
@@ -28,7 +27,6 @@ func parseTestConfig(t *testing.T, text string) *Config {
 }
 
 func TestConfigExample(t *testing.T) {
-	t.Setenv("HC_UUID_SEED", testUUIDSeed)
 	b, err := os.ReadFile("../../config.example.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +59,23 @@ func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseConfig([]byte(input), os.LookupEnv); err == nil {
 				t.Fatal("accepted invalid configuration")
+			}
+		})
+	}
+}
+
+func TestConfigRequiresUUID(t *testing.T) {
+	for name, input := range map[string]string{
+		"omitted": strings.Replace(simpleConfig, "  - uuid: "+testUUID+"\n    name:", "  - name:", 1),
+		"empty":   strings.Replace(simpleConfig, testUUID, `""`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			// A configured environment must not supply a missing check identity.
+			_, err := ParseConfig([]byte(input), func(string) (string, bool) {
+				return "0123456789abcdef0123456789abcdef", true
+			})
+			if err == nil || !strings.Contains(err.Error(), "uuid") {
+				t.Fatalf("missing UUID validation: %v", err)
 			}
 		})
 	}
@@ -150,62 +165,4 @@ func TestWebhookConfigInterpolationAndJSON(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGeneratedUUIDIdentity(t *testing.T) {
-	t.Setenv("HC_UUID_SEED", testUUIDSeed)
-	input := strings.Replace(simpleConfig, "  - uuid: "+testUUID+"\n    name:", "  - name:", 1)
-	first := parseTestConfig(t, input).Checks[0]
-	// Independently calculated HMAC-SHA256 vector, formatted as UUIDv8.
-	if first.UUID != "fe068ca6-5f98-8083-9d7c-11f4e4fd90a8" {
-		t.Fatalf("generated UUID = %s", first.UUID)
-	}
-	changed := strings.Replace(input, "every: 5m", "every: 10m\n    tags: backup\n    region: region-a", 1)
-	if got := parseTestConfig(t, changed).Checks[0]; got.UUID != first.UUID || got.Key != first.Key {
-		t.Fatal("schedule or metadata changed check identity")
-	}
-	if got := parseTestConfig(t, strings.Replace(input, "Heartbeat", "Renamed", 1)); got.Checks[0].UUID == first.UUID {
-		t.Fatal("renaming an automatically identified check did not change its UUID")
-	}
-	t.Setenv("HC_UUID_SEED", "another-seed-with-at-least-32-bytes")
-	if got := parseTestConfig(t, input); got.Checks[0].UUID == first.UUID {
-		t.Fatal("changing seed did not change generated UUID")
-	}
-	if got := parseTestConfig(t, simpleConfig); got.Checks[0].UUID != testUUID {
-		t.Fatal("seed changed explicit UUID")
-	}
-}
-
-func TestGeneratedUUIDRequiresSeed(t *testing.T) {
-	input := strings.Replace(simpleConfig, "  - uuid: "+testUUID+"\n    name:", "  - name:", 1)
-	for _, seed := range []string{"", "too-short"} {
-		t.Setenv("HC_UUID_SEED", seed)
-		_, err := ParseConfig([]byte(input), os.LookupEnv)
-		if err == nil || !strings.Contains(err.Error(), "HC_UUID_SEED") {
-			t.Fatalf("missing seed validation: %v", err)
-		}
-		if seed != "" && strings.Contains(err.Error(), seed) {
-			t.Fatal("seed leaked in validation error")
-		}
-		if got := parseTestConfig(t, simpleConfig); got.Checks[0].UUID != testUUID {
-			t.Fatal("explicit UUID requires a seed")
-		}
-	}
-}
-
-func TestGeneratedUUIDConflictExplainsDuplicateName(t *testing.T) {
-	t.Setenv("HC_UUID_SEED", testUUIDSeed)
-	input := strings.Replace(simpleConfig, "  - uuid: "+testUUID+"\n    name:", "  - name:", 1)
-	duplicate := input + strings.Split(input, "checks:\n")[1]
-	_, err := ParseConfig([]byte(duplicate), os.LookupEnv)
-	if err == nil || !strings.Contains(err.Error(), "checks[1].name") || !strings.Contains(err.Error(), "duplicate name") || !strings.Contains(err.Error(), "checks[0]") {
-		t.Fatalf("duplicate generated identity error = %v", err)
-	}
-	// Explicit UUIDs allow equal display names but cannot collide with a generated UUID.
-	explicit := strings.Replace(simpleConfig, testUUID, "fe068ca6-5f98-8083-9d7c-11f4e4fd90a8", 1)
-	_, err = ParseConfig([]byte(input+strings.Split(explicit, "checks:\n")[1]), os.LookupEnv)
-	if err == nil || !strings.Contains(err.Error(), "duplicate UUID") || strings.Contains(err.Error(), "duplicate name") {
-		t.Fatalf("explicit/generated UUID conflict error = %v", err)
-	}
-	parseTestConfig(t, input+strings.Split(simpleConfig, "checks:\n")[1])
 }

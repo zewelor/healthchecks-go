@@ -30,7 +30,6 @@ jobs:
           --health-cmd "pg_isready -U hc_test -d hc_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      HC_UUID_SEED: ci-only-uuid-seed-not-for-deployment
       HC_TEST_POSTGRES: "1"
       DB_HOST: 127.0.0.1
       DB_PORT: "15432"
@@ -63,7 +62,7 @@ jobs:
       - name: Build container
         run: docker build --tag healthchecks-go:test .
       - name: Validate example inside container
-        run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --env HC_UUID_SEED --volume "$PWD/config.example.yml:/config/config.yml:ro" healthchecks-go:test -check
+        run: docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --volume "$PWD/config.example.yml:/config/config.yml:ro" healthchecks-go:test -check
       - name: Compare Ping API with Healthchecks v4.4
         run: |
           go build -o /tmp/healthchecks-go ./cmd/healthchecks-go

@@ -11,14 +11,12 @@ import (
 
 func TestCheckConfigurationWithoutMetricsKey(t *testing.T) {
 	t.Setenv("HC_METRICS_KEY", "")
-	t.Setenv("HC_UUID_SEED", "0123456789abcdef0123456789abcdef")
 	if _, err := runCommand(t, "-config", "../../config.example.yml", "-check"); err != nil {
 		t.Fatalf("configuration validation without metrics key: %v", err)
 	}
 }
 
 func TestListPingURLs(t *testing.T) {
-	t.Setenv("HC_UUID_SEED", "0123456789abcdef0123456789abcdef")
 	output, err := runCommand(t, "-config", "../../config.example.yml", "-check", "-list-ping-urls")
 	if err != nil {
 		t.Fatal(err)
@@ -26,13 +24,12 @@ func TestListPingURLs(t *testing.T) {
 	if !strings.Contains(output, "http://localhost:8000/ping/11111111-1111-4111-8111-111111111111") || !strings.Contains(output, "Daily backup") {
 		t.Fatalf("missing ping URLs: %s", output)
 	}
-	if strings.Contains(output, os.Getenv("HC_UUID_SEED")) || len(strings.Split(strings.TrimSpace(output), "\n")) != 2 {
+	if len(strings.Split(strings.TrimSpace(output), "\n")) != 2 {
 		t.Fatalf("unexpected listing: %s", output)
 	}
 }
 
 func TestListenErrorPreservesCause(t *testing.T) {
-	t.Setenv("HC_UUID_SEED", "0123456789abcdef0123456789abcdef")
 	_, err := runCommand(t, "-config", "../../config.example.yml", "-listen", "127.0.0.1:99999")
 	var cause *net.OpError
 	if !errors.As(err, &cause) || cause.Op != "listen" || !strings.Contains(err.Error(), "99999") {

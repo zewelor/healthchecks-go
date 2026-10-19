@@ -1,6 +1,5 @@
 # Generate a random UUID on Linux: cat /proc/sys/kernel/random/uuid
 # Keep an existing UUID when migrating a check to preserve its ping URL.
-# Without uuid, name + HC_UUID_SEED (32+ bytes) determine the UUID; keep both stable.
 public_url: http://localhost:8000
 
 checks:
@@ -9,7 +8,8 @@ checks:
     every: 5m
     grace: 1m
 
-  - name: Daily backup
+  - uuid: 22222222-2222-4222-8222-222222222222
+    name: Daily backup
     cron: "0 2 * * *"
     timezone: Europe/London
     grace: 30m

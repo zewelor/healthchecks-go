@@ -19,14 +19,9 @@ import (
 
 const uuid = "11111111-1111-4111-8111-111111111111"
 
-func TestGeneratedIdentityAcrossReloads(t *testing.T) {
-	lookup := func(key string) (string, bool) {
-		if key == "HC_UUID_SEED" {
-			return "0123456789abcdef0123456789abcdef", true
-		}
-		return "", false
-	}
-	config := "public_url: https://status.example.test\nchecks:\n  - name: Heartbeat\n    every: 5m\n    grace: 1m\n"
+func TestExplicitIdentityAcrossReloads(t *testing.T) {
+	lookup := func(string) (string, bool) { return "", false }
+	config := "public_url: https://status.example.test\nchecks:\n  - uuid: " + uuid + "\n    name: Heartbeat\n    every: 5m\n    grace: 1m\n"
 	parse := func(text string) *healthchecks.Config {
 		t.Helper()
 		c, err := healthchecks.ParseConfig([]byte(text), lookup)
@@ -65,7 +60,7 @@ func TestGeneratedIdentityAcrossReloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ping(id, "/fail") != 200 {
-		t.Fatal("generated UUID ping rejected")
+		t.Fatal("configured UUID ping rejected")
 	}
 	config = strings.Replace(config, "every: 5m", "every: 10m\n    region: region-a", 1)
 	replace(config)
@@ -73,42 +68,50 @@ func TestGeneratedIdentityAcrossReloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := e.Snapshot()[0]; got.Status != "down" || len(got.Events) != 1 || got.Region != "region-a" {
-		t.Fatalf("metadata reload lost generated check state: %+v", got)
+		t.Fatalf("metadata reload lost check state: %+v", got)
 	}
 	replace(config + strings.Split(config, "checks:\n")[1])
-	if _, err := w.Check(); err == nil || !strings.Contains(err.Error(), "duplicate name") {
-		t.Fatalf("duplicate name reload error: %v", err)
+	if _, err := w.Check(); err == nil || !strings.Contains(err.Error(), "duplicate UUID") {
+		t.Fatalf("duplicate UUID reload error: %v", err)
 	}
 	if got := e.Snapshot()[0]; got.Status != "down" || len(got.Events) != 1 {
-		t.Fatal("invalid duplicate-name reload destroyed active state")
+		t.Fatal("invalid duplicate-UUID reload destroyed active state")
 	}
-	// Pinning the resolved UUID allows a rename without changing identity.
-	pinned := strings.Replace(config, "  - name: Heartbeat", "  - uuid: "+id+"\n    name: Renamed", 1)
-	replace(pinned)
-	if _, err := w.Check(); err != nil {
-		t.Fatal(err)
+	// Missing UUIDs must reject a reload without losing active state.
+	replace(strings.Replace(config, "  - uuid: "+id+"\n    name:", "  - name:", 1))
+	if _, err := w.Check(); err == nil || !strings.Contains(err.Error(), "uuid") {
+		t.Fatalf("missing UUID reload error: %v", err)
 	}
-	if got := e.Snapshot()[0]; got.Name != "Renamed" || got.Status != "down" || len(got.Events) != 1 || e.Info().ReloadError != "" {
-		t.Fatal("explicit UUID did not preserve identity during rename")
+	if got := e.Snapshot()[0]; got.Status != "down" || len(got.Events) != 1 || ping(id, "/log") != 200 {
+		t.Fatal("missing UUID reload destroyed active state")
 	}
-	// Without a pinned UUID, a different name deliberately starts a new check.
+	// Renaming a check keeps its explicit identity and state.
 	renamed := strings.Replace(config, "Heartbeat", "Renamed", 1)
 	replace(renamed)
 	if _, err := w.Check(); err != nil {
 		t.Fatal(err)
 	}
-	newID := parse(renamed).Checks[0].UUID
-	if newID == id || ping(id, "") != 404 {
-		t.Fatal("renamed generated check retained its old ping identity")
+	if got := e.Snapshot()[0]; got.Name != "Renamed" || got.Status != "down" || len(got.Events) != 2 || e.Info().ReloadError != "" {
+		t.Fatal("explicit UUID did not preserve identity during rename")
+	}
+	// Changing the UUID deliberately starts a new check.
+	const newID = "22222222-2222-4222-8222-222222222222"
+	replaced := strings.Replace(renamed, id, newID, 1)
+	replace(replaced)
+	if _, err := w.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if ping(id, "") != 404 {
+		t.Fatal("replaced check retained its old ping identity")
 	}
 	if got := e.Snapshot()[0]; got.Status != "awaiting" || len(got.Events) != 0 {
-		t.Fatal("renamed generated check retained old state")
+		t.Fatal("replaced check retained old state")
 	}
 	if ping(newID, "") != 200 || e.Snapshot()[0].Status != "up" {
-		t.Fatal("renamed generated check does not receive pings")
+		t.Fatal("replacement check does not receive pings")
 	}
-	if restarted := healthchecks.NewEngine(parse(renamed), time.Now); restarted.Snapshot()[0].Key != e.Snapshot()[0].Key {
-		t.Fatal("restart changed generated identity")
+	if restarted := healthchecks.NewEngine(parse(replaced), time.Now); restarted.Snapshot()[0].Key != e.Snapshot()[0].Key {
+		t.Fatal("restart changed explicit identity")
 	}
 }
 

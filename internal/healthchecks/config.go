@@ -2,9 +2,7 @@ package healthchecks
 
 import (
 	"bytes"
-	"crypto/hmac"
 	"crypto/sha1"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -112,20 +110,14 @@ func ParseConfig(data []byte, lookup func(string) (string, bool)) (*Config, erro
 			return nil, err
 		}
 	}
-	seed, _ := lookup("HC_UUID_SEED")
 	seen := make(map[string]int)
-	generated := make([]bool, len(c.Checks))
 	keys := make(map[string]bool)
 	for i := range c.Checks {
 		x := &c.Checks[i]
-		generated[i] = x.UUID == ""
-		if err := x.validate(seed); err != nil {
+		if err := x.validate(); err != nil {
 			return nil, fmt.Errorf("checks[%d]: %w", i, err)
 		}
 		if previous, exists := seen[x.UUID]; exists {
-			if generated[i] && generated[previous] && x.Name == c.Checks[previous].Name {
-				return nil, fmt.Errorf("checks[%d].name: duplicate name for checks without uuid (already used by checks[%d]); change the name or set an explicit uuid", i, previous)
-			}
 			return nil, fmt.Errorf("checks[%d].uuid: duplicate UUID (already used by checks[%d])", i, previous)
 		}
 		if keys[x.Key] {
@@ -173,16 +165,11 @@ func validateYAMLNode(n *yaml.Node, field string, depth int) error {
 	return nil
 }
 
-func (c *CheckConfig) validate(seed string) error {
+func (c *CheckConfig) validate() error {
 	if strings.TrimSpace(c.Name) == "" || len(c.Name) > 100 {
 		return errors.New("name must contain 1 to 100 bytes")
 	}
-	if c.UUID == "" {
-		if len(seed) < 32 {
-			return errors.New("HC_UUID_SEED must contain at least 32 bytes for checks without uuid")
-		}
-		c.UUID = uuidForName(c.Name, seed)
-	} else if !uuidPattern.MatchString(c.UUID) {
+	if !uuidPattern.MatchString(c.UUID) {
 		return errors.New("uuid must be a lowercase canonical UUID")
 	}
 	if len(c.Tags) > 500 {
@@ -241,17 +228,6 @@ func (c *CheckConfig) validate(seed string) error {
 	h := sha1.Sum([]byte(strings.ReplaceAll(c.UUID, "-", "")[:16]))
 	c.Key = hex.EncodeToString(h[:])
 	return nil
-}
-
-// The prefix and exact UTF-8 name form the stable identity input. This is a
-// custom keyed construction, so use UUIDv8 rather than UUIDv5's SHA-1 layout.
-func uuidForName(name, seed string) string {
-	h := hmac.New(sha256.New, []byte(seed))
-	_, _ = io.WriteString(h, "healthchecks-go/check/"+name)
-	b := h.Sum(nil)[:16]
-	b[6] = b[6]&0x0f | 0x80
-	b[8] = b[8]&0x3f | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 func (c *CheckConfig) next(after time.Time) time.Time {

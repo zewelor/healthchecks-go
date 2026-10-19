@@ -19,7 +19,7 @@ It has no accounts, management API, or built-in regional inhibition.
 
 [config.example.yml](config.example.yml) contains two fictional checks: an interval and a cron schedule.
 Use `config.yml` for the runtime configuration. Keep existing UUIDs when migrating checks;
-otherwise replace the explicit example UUID or omit `uuid` to derive it from the check name and a secret seed.
+otherwise replace each example UUID with a randomly generated UUID.
 The default configuration path is `config.yml`; the default listen address is `:8000`.
 Set `public_url` to an HTTP(S) origin, such as `https://status.example.org` or `http://localhost:8000`.
 A trailing `/` is accepted; subpaths such as `/base` are rejected.
@@ -31,15 +31,12 @@ Requires Go 1.27 or later:
 ```sh
 go build -o /tmp/healthchecks-go ./cmd/healthchecks-go
 cp config.example.yml config.yml
-export HC_UUID_SEED="$(cat /proc/sys/kernel/random/uuid)"
 /tmp/healthchecks-go -config config.yml -check
 /tmp/healthchecks-go -config config.yml -list-ping-urls
 DB_HOST=localhost DB_NAME=healthchecks_go DB_USER=healthchecks DB_PASSWORD=local-password \
   DB_SSLMODE=disable /tmp/healthchecks-go -config config.yml
 ```
 
-Generate `HC_UUID_SEED` once, save it in your deployment's secret configuration, and reuse it on every start.
-The example above creates a new seed; running that line again changes all automatically generated UUIDs.
 Open `http://localhost:8000/`. Send a success ping to `/ping/<uuid>` from the job being monitored.
 `-check` and `-list-ping-urls` validate YAML and its environment references without connecting to PostgreSQL.
 Database settings are required only when starting the server.
@@ -57,7 +54,7 @@ To build and run locally:
 ```sh
 docker build -t healthchecks-go:local .
 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
-  -p 127.0.0.1:8000:8000 -e HC_UUID_SEED \
+  -p 127.0.0.1:8000:8000 \
   -e DB_HOST -e DB_PORT -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
   -v "$PWD/config-directory:/config:ro" healthchecks-go:local
 ```
@@ -103,7 +100,7 @@ This release does not support multiple active workers. Confirm network access to
 
 ## Configuration reference
 
-Each check requires `name`, `grace`, and exactly one of `every` or `cron`.
+Each check requires `uuid`, `name`, `grace`, and exactly one of `every` or `cron`.
 Durations use Go syntax, such as `5m`, `1h30m`, and `24h`. Cron time zones default to UTC; intervals measure elapsed time.
 Use `UTC` or an explicit IANA time zone such as `Europe/London`. Host-dependent `Local` is rejected.
 Optional fields are `tags`, `region`, `depends_on_regions`, `paused`, and `notify`.
@@ -140,22 +137,13 @@ The dashboard should be protected by an authentication proxy when needed; ping U
 
 ### Check identity
 
-`uuid` is optional. When omitted or empty, `HC_UUID_SEED` must contain at least 32 bytes.
-It is not needed when all checks have explicit UUIDs. The seed must be random, secret, and stable across restarts.
-On Linux, `cat /proc/sys/kernel/random/uuid` generates a suitable value.
+Every check must have an explicit, unique lowercase canonical `uuid` in YAML.
+On Linux, `cat /proc/sys/kernel/random/uuid` generates a random UUID to copy into the configuration.
+Keep it unchanged to preserve the ping URL and runtime state; changing the name or metadata does not change identity.
+Different UUIDs may share a display name. Missing, empty, invalid, and duplicate UUIDs are configuration errors.
 
-Generated IDs use HMAC-SHA256 keyed by the seed over `healthchecks-go/check/` followed by the exact UTF-8 name.
-The first 16 digest bytes are formatted as [UUIDv8](https://www.rfc-editor.org/rfc/rfc9562.html#section-5.8),
-with the standard version and variant bits. This algorithm is part of the ping URL compatibility contract.
-Case and whitespace in the name matter; schedule, tags, region, list order, and `public_url` do not affect the UUID.
-
-Changing the name or seed creates a new identity, ping URL, and runtime state.
-To rename a check while keeping its identity, first copy its generated UUID into `uuid`.
-Two checks without explicit UUIDs cannot share a name; different explicit UUIDs may share a display name.
-All resolved UUIDs are checked for conflicts before configuration is applied.
-
-Use `-list-ping-urls` to print names and resolved ping URLs without starting a server.
-It requires the same configuration and seed as the running service. Treat its output as credentials;
+Use `-list-ping-urls` to print names and configured ping URLs without starting a server.
+It requires the same configuration as the running service. Treat its output as credentials;
 UUIDs are not exposed in dashboard pages, metrics, or webhook payloads automatically.
 
 ### Optional webhook
@@ -185,7 +173,7 @@ YAML changes reload without losing state. Environment variable changes require a
 Reload is checked every five seconds. Invalid updates and failed database transactions leave the previous configuration active and show a dashboard error.
 A transient database failure retries the same YAML after recovery. Successful reload deletes removed checks and their pending notifications atomically.
 Removing and re-adding a UUID starts fresh state; an old HTTP completion cannot alter the new check.
-Tags and metadata can change without clearing check history. Names can change without resetting history when `uuid` is explicit.
+Tags, metadata, and names can change without resetting history as long as `uuid` stays unchanged.
 Changing metric labels can still reset external alerts.
 
 ## Ping and state semantics
