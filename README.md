@@ -48,8 +48,8 @@ Keep deployment configuration and credentials out of a public repository.
 ### Container
 
 After CI succeeds on `main`, GitHub Actions publishes `ghcr.io/zewelor/healthchecks-go:latest`
-for Linux amd64 and arm64. The same image is tagged `sha-<full-commit-sha>`; the latest
-ten tagged images are retained. The workflow summary records the published digest.
+for Linux amd64 and arm64. Only the `latest` tag is published; the source commit is
+recorded in the `org.opencontainers.image.revision` label. The workflow summary records the published digest.
 Pull requests only run verification. Use an image digest to pin a deployment.
 
 To build and run locally:
