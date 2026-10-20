@@ -25,7 +25,8 @@ Set the database environment variables below, then:
 cp config.example.yml config.yml
 # Edit config.yml with your checks and public URL.
 docker run --rm -p 127.0.0.1:8000:8000 \
-  -e DB_HOST -e DB_PORT -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
+  -e DB_HOST -e DB_PORT -e DB_NAME \
+  -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
   -v "$PWD:/config:ro" ghcr.io/zewelor/healthchecks-go:latest
 ```
 
