@@ -143,11 +143,14 @@ const dashboardHTML = `<!doctype html>
     time[data-full]:hover::after, time[data-full]:focus::after { content: attr(data-full); position: absolute; z-index: 2; bottom: calc(100% + .4rem); left: 0; box-sizing: border-box; width: max-content; max-width: min(18rem, var(--tooltip-max-width, calc(100vw - 2rem))); padding: .4rem .6rem; border: 1px solid var(--border-strong); border-radius: .4rem; background: var(--surface); color: var(--text); box-shadow: 0 4px 12px rgb(0 0 0 / .15); font-size: .78rem; pointer-events: none; }
     time[data-positioned]:hover::after, time[data-positioned]:focus::after { position: fixed; top: var(--tooltip-top); left: var(--tooltip-left); bottom: auto; }
     .toolbar { position: relative; display: flex; flex-direction: column; align-items: flex-start; align-self: stretch; gap: .15rem; flex-shrink: 0; padding: .65rem .8rem; }
-    .sort-control { display: flex; align-items: center; height: 1.02rem; color: var(--muted); }
+    .sort-control { display: grid; place-items: center; width: 32px; height: 28px; margin: -6px -8px; padding: 0; border: 0; border-radius: .35rem; background: transparent; color: var(--text); cursor: pointer; }
+    .sort-control:hover { background: var(--border); }
+    .sort-control .sort-down, .sort-control[data-direction="desc"] .sort-up { opacity: .3; }
+    .sort-control[data-direction="desc"] .sort-down { opacity: 1; }
     .sort-control svg, .sort-chevron { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
     .toolbar select { height: 1.95rem; padding: 0 1.25rem 0 0; border: 0; border-radius: .3rem; appearance: none; background: transparent; color: var(--text); font-size: 1.05rem; font-weight: 650; line-height: 1.5; cursor: pointer; }
     .sort-chevron { position: absolute; right: .8rem; bottom: 1.25rem; width: 12px; height: 12px; color: var(--muted); pointer-events: none; }
-    @media (max-width: 600px) { .toolbar { width: 34px; height: 34px; align-self: center; align-items: center; justify-content: center; padding: 0; } .toolbar select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; } .toolbar .sort-chevron { display: none; } .toolbar:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; } }
+    @media (max-width: 600px) { .toolbar { align-self: center; gap: 0; padding: 0; } .sort-control { width: 100%; height: 32px; margin: 0; } .toolbar select { height: 32px; padding: 0 .25rem; appearance: auto; font-size: .85rem; } .toolbar .sort-chevron { display: none; } }
     .theme-switch { position: relative; display: inline-flex; gap: 2px; padding: 3px; border: 0; border-radius: 999px; background: var(--control-bg); }
     .theme-switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 28px; height: 28px; border-radius: 50%; background: var(--control-text); transform: translateX(0); }
     .theme-switch[data-choice="light"]::before { transform: translateX(30px); }
@@ -230,7 +233,7 @@ const dashboardHTML = `<!doctype html>
           <button class="metric" type="button" data-filter="awaiting" aria-pressed="false"><span class="metric-label">Awaiting</span><span class="metric-value">{{.Awaiting}}</span></button>
           <button class="metric" type="button" data-filter="paused" aria-pressed="false"><span class="metric-label">Paused</span><span class="metric-value">{{.Paused}}</span></button>
         </section>
-        <div class="toolbar"><span class="sort-control" title="Sort by" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 4v16m-4-4 4 4 4-4M16 20V4m-4 4 4-4 4 4"/></svg></span><select id="sort-select" aria-label="Sort by"><option value="state">State</option><option value="name">Name</option><option value="due">Next due</option></select><svg class="sort-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
+        <div class="toolbar"><button class="sort-control" id="sort-direction" type="button" data-direction="asc" aria-label="Sort descending" title="Sort descending"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sort-down" d="M8 4v16m-4-4 4 4 4-4"/><path class="sort-up" d="M16 20V4m-4 4 4-4 4 4"/></svg></button><select id="sort-select" aria-label="Sort by"><option value="state">State</option><option value="name">Name</option><option value="due">Next due</option></select><svg class="sort-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
         </div>
         {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
@@ -300,6 +303,8 @@ const dashboardRefreshScript = `(() => {
   if (grid) {
     const cards = Array.from(grid.querySelectorAll(".check-card"));
     const sort = document.getElementById("sort-select");
+    const directionButton = document.getElementById("sort-direction");
+    let direction = readPreference("hc-sort-direction") === "desc" ? -1 : 1;
     const filters = Array.from(document.querySelectorAll("[data-filter]"));
     const savedSort = readPreference("hc-sort");
     if (["state", "name", "due"].includes(savedSort)) sort.value = savedSort;
@@ -311,14 +316,28 @@ const dashboardRefreshScript = `(() => {
       cards.sort((a, b) => {
         let order = 0;
         if (sort.value === "state") order = ranks[a.dataset.status] - ranks[b.dataset.status];
-        if (sort.value === "due") order = (Date.parse(a.dataset.due) || Infinity) - (Date.parse(b.dataset.due) || Infinity);
-        return order || names.compare(a.dataset.name, b.dataset.name);
+        if (sort.value === "due") {
+          // Checks without an active deadline stay last in either direction.
+          const missing = Number(!a.dataset.due) - Number(!b.dataset.due);
+          if (missing) return missing;
+          if (a.dataset.due) order = Date.parse(a.dataset.due) - Date.parse(b.dataset.due);
+        }
+        return direction * (order || names.compare(a.dataset.name, b.dataset.name));
       });
+      directionButton.dataset.direction = direction === 1 ? "asc" : "desc";
+      const action = direction === 1 ? "Sort descending" : "Sort ascending";
+      directionButton.setAttribute("aria-label", action);
+      directionButton.title = action;
       cards.forEach(card => { card.hidden = status !== "all" && card.dataset.status !== status; grid.append(card); });
       filters.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.filter === status)));
       document.getElementById("filter-empty").hidden = cards.some(card => !card.hidden);
     };
     sort.addEventListener("change", () => { savePreference("hc-sort", sort.value); updateChecks(); });
+    directionButton.addEventListener("click", () => {
+      direction *= -1;
+      savePreference("hc-sort-direction", direction === 1 ? "asc" : "desc");
+      updateChecks();
+    });
     filters.forEach(button => button.addEventListener("click", () => {
       status = button.dataset.filter;
       savePreference("hc-status", status);
@@ -335,13 +354,14 @@ const dashboardRefreshScript = `(() => {
     document.querySelectorAll("time[data-full]").forEach(element => {
       const date = new Date(element.dateTime);
       const fullTime = fullTimeFormatter.format(date);
-      element.dataset.full = fullTime;
-      element.setAttribute("aria-label", fullTime);
+      if (element.dataset.full !== fullTime) element.dataset.full = fullTime;
+      if (element.getAttribute("aria-label") !== fullTime) element.setAttribute("aria-label", fullTime);
       const seconds = (date.getTime() - Date.now()) / 1000;
       const [size, unit] = Math.abs(seconds) >= 84600 ? [86400, "day"] : Math.abs(seconds) >= 3570 ? [3600, "hour"] : Math.abs(seconds) >= 60 ? [60, "minute"] : [1, "second"];
       const amount = Math.sign(seconds) * Math.round(Math.abs(seconds) / size);
       const text = amount === 0 ? "now" : formatter.format(amount, unit);
-      element.textContent = element.dataset.due === "true" ? text.replace(/ ago$/, " overdue") : text;
+      const label = element.dataset.due === "true" ? text.replace(/ ago$/, " overdue") : text;
+      if (element.textContent !== label) element.textContent = label;
     });
   };
   updateTimes();
