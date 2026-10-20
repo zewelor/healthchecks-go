@@ -1,0 +1,36 @@
+public_url: http://127.0.0.1:18081
+
+checks:
+  - uuid: 11111111-1111-1111-1111-111111111111
+    name: API heartbeat
+    tags: api, monitoring
+    depends_on_regions: [eu-west]
+    every: 15m
+    grace: 30m
+  - uuid: 22222222-2222-2222-2222-222222222222
+    name: Database backup
+    tags: database, backups
+    every: 336h
+    grace: 90m
+  - uuid: 33333333-3333-3333-3333-333333333333
+    name: Scheduled cleanup
+    tags: maintenance, cron
+    cron: 0 3 * * *
+    timezone: UTC
+    grace: 30m
+  - uuid: 44444444-4444-4444-4444-444444444444
+    name: Queue worker
+    tags: queue, monitoring
+    every: 1h
+    grace: 90m
+  - uuid: 55555555-5555-5555-5555-555555555555
+    name: Weekly report
+    tags: reports, scheduled
+    every: 168h
+    grace: 1h
+  - uuid: 66666666-6666-6666-6666-666666666666
+    name: Certificate check
+    tags: security, monitoring
+    every: 24h
+    grace: 1h
+    paused: true

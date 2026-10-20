@@ -35,6 +35,7 @@ var (
 )
 
 type Config struct {
+	SiteName  string         `yaml:"-"`
 	PublicURL string         `yaml:"public_url"`
 	Webhook   *WebhookConfig `yaml:"webhook"`
 	Checks    []CheckConfig  `yaml:"checks"`
@@ -95,6 +96,13 @@ func ParseConfig(data []byte, lookup func(string) (string, bool)) (*Config, erro
 	}
 	if err := dec.Decode(new(any)); err != io.EOF {
 		return nil, errors.New("configuration must contain one YAML document")
+	}
+	if lookup != nil {
+		c.SiteName, _ = lookup("HC_SITE_NAME")
+	}
+	c.SiteName = strings.TrimSpace(c.SiteName)
+	if c.SiteName == "" {
+		c.SiteName = "Healthchecks"
 	}
 	if !validHTTPURL(c.PublicURL, false) {
 		return nil, errors.New("public_url must be an HTTP(S) origin with port 1-65535 if set; paths, user information, query, and fragment are not supported")

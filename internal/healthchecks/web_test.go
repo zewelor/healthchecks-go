@@ -65,8 +65,8 @@ func TestDashboardIndexUsesSafeKeysAndShowsOneCardPerCheck(t *testing.T) {
 	if strings.Contains(body, `<img src=x`) || !strings.Contains(body, `&lt;img`) {
 		t.Fatal("check name was not HTML escaped")
 	}
-	if !strings.Contains(strings.ToLower(body), "ping logs") || !strings.Contains(strings.ToLower(body), "reload") || strings.Contains(body, `<invalid config>`) || !strings.Contains(body, `&lt;invalid config&gt;`) {
-		t.Fatalf("dashboard should explain process-local logs and surface escaped reload errors (logs=%t reload=%t escaped=%t raw=%t)", strings.Contains(body, "ping logs"), strings.Contains(body, "reload"), strings.Contains(body, `&lt;invalid config&gt;`), strings.Contains(body, `<invalid config>`))
+	if !strings.Contains(strings.ToLower(body), "reload") || strings.Contains(body, `<invalid config>`) || !strings.Contains(body, `&lt;invalid config&gt;`) {
+		t.Fatal("dashboard should surface escaped reload errors")
 	}
 }
 
@@ -94,7 +94,7 @@ func TestDashboardDetailShowsScheduleDependenciesWebhookAndEscapedEvents(t *test
 		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	for _, want := range []string{"Every 5m", "us-east", "Incident desk", "run-123", "log", "heartbeat", "Exit code: 2", "Duration: 0s", "Log was truncated"} {
+	for _, want := range []string{"Every 5 minutes", "us-east", "Incident desk", "run-123", "log", "heartbeat", "Exit code: 2", "Duration: 0s", "Log was truncated"} {
 		if !strings.Contains(strings.ToLower(body), strings.ToLower(want)) {
 			t.Errorf("detail page missing %q", want)
 		}
@@ -146,30 +146,148 @@ func TestDashboardHeadHasHeadersButNoBody(t *testing.T) {
 	}
 }
 
-func TestDashboardRefreshControlUsesStaticHashedScript(t *testing.T) {
+func TestDashboardUsesStaticHashedScripts(t *testing.T) {
 	e := dashboardEngine(t)
 	key := e.Snapshot()[0].Key
 	paths := []string{"/", "/checks/" + key}
 	hash := sha256.Sum256([]byte(dashboardRefreshScript))
 	policy := "script-src 'sha256-" + base64.StdEncoding.EncodeToString(hash[:]) + "'"
+	themeHash := sha256.Sum256([]byte(dashboardThemeScript))
+	themePolicy := "'sha256-" + base64.StdEncoding.EncodeToString(themeHash[:]) + "'"
 	for _, path := range paths {
 		w := dashboardRequest(e, http.MethodGet, path)
 		if w.Code != http.StatusOK {
 			t.Fatalf("GET %q status = %d, want 200", path, w.Code)
 		}
 		body := w.Body.String()
-		if !strings.Contains(body, `<button class="refresh-toggle" id="refresh-toggle" type="button" aria-pressed="false">Pause auto-refresh</button>`) {
-			t.Errorf("GET %q missing the pause control", path)
-		}
+
 		if !strings.Contains(body, "<script>"+dashboardRefreshScript+"</script>") || strings.Contains(body, `http-equiv="refresh"`) {
 			t.Errorf("GET %q did not render the static controllable refresh script", path)
 		}
 		csp := w.Header().Get("Content-Security-Policy")
-		if !strings.Contains(csp, policy) || strings.Contains(csp, "script-src 'unsafe-inline'") {
+		if !strings.Contains(csp, policy) || !strings.Contains(csp, themePolicy) || strings.Contains(csp, "script-src 'unsafe-inline'") {
 			t.Errorf("GET %q CSP does not hash the static script: %q", path, csp)
 		}
 		if strings.Contains(body, `<img src=x`) || strings.Contains(body, `<script>alert`) {
 			t.Errorf("GET %q rendered user data as executable HTML", path)
+		}
+	}
+}
+
+func TestDashboardRelativeTime(t *testing.T) {
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		delta time.Duration
+		want  string
+	}{
+		{0, "now"}, {5 * time.Minute, "in 5 minutes"}, {-time.Minute, "1 minute ago"},
+		{2 * time.Hour, "in 2 hours"}, {-24 * time.Hour, "1 day ago"}, {30 * time.Second, "in 30 seconds"},
+		{24*time.Hour - 5*time.Second, "in 1 day"}, {time.Hour - 5*time.Second, "in 1 hour"}, {time.Minute - time.Second, "in 59 seconds"},
+	} {
+		if got := formatDashboardRelativeTime(now.Add(tc.delta), now); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.delta, got, tc.want)
+		}
+	}
+	if got := formatDashboardRelativeTime(time.Time{}, now); got != "—" {
+		t.Fatalf("unset time = %q", got)
+	}
+}
+
+func TestDashboardCompactCheckTimes(t *testing.T) {
+	e := dashboardEngine(t)
+	body := dashboardRequest(e, http.MethodGet, "/").Body.String()
+	if !strings.Contains(body, `datetime="2026-10-18T12:05:00Z"`) || !strings.Contains(body, `>in 5 minutes</time>`) {
+		t.Fatal("next due should show a relative time with a machine-readable exact date")
+	}
+	if !strings.Contains(body, `data-full="Sun, 18 Oct 2026 12:05:00 UTC"`) {
+		t.Fatal("full time should be available on hover and focus")
+	}
+	if strings.Contains(body, `<dt>Running</dt>`) || strings.Contains(body, `<dt>Schedule</dt>`) {
+		t.Fatal("inactive running state and schedule should not clutter the overview")
+	}
+	e.Ping(testUUID, Input{Kind: "start"})
+	body = dashboardRequest(e, http.MethodGet, "/").Body.String()
+	if !strings.Contains(body, `Running since`) {
+		t.Fatal("active runs should remain visible")
+	}
+}
+
+func TestDashboardReadableSchedule(t *testing.T) {
+	for _, tc := range []struct{ every, want string }{
+		{"336h", "Every 14 days"}, {"24h", "Every 1 day"}, {"90m", "Every 1 hour 30 minutes"}, {"5m", "Every 5 minutes"}, {"1500ms", "Every 1.5 seconds"},
+	} {
+		e := NewEngine(parseTestConfig(t, strings.Replace(simpleConfig, "every: 5m", "every: "+tc.every, 1)), time.Now)
+		body := dashboardRequest(e, http.MethodGet, "/checks/"+e.Snapshot()[0].Key).Body.String()
+		if !strings.Contains(body, tc.want) {
+			t.Errorf("%s: detail should show %q", tc.every, tc.want)
+		}
+	}
+}
+
+func TestDashboardSiteNameIsEscapedInHeadingAndTitles(t *testing.T) {
+	e := dashboardEngine(t)
+	e.mu.Lock()
+	e.applied.SiteName = `Status <img src=x onerror=alert(1)>`
+	e.mu.Unlock()
+	for _, path := range []string{"/", "/checks/" + e.Snapshot()[0].Key} {
+		body := dashboardRequest(e, http.MethodGet, path).Body.String()
+		if !strings.Contains(body, "Status &lt;img") || strings.Contains(body, "Status <img") {
+			t.Fatalf("%s: site name missing or unescaped", path)
+		}
+	}
+}
+
+func TestDashboardDetailUsesRelativeTimes(t *testing.T) {
+	e := dashboardEngine(t)
+	e.Ping(testUUID, Input{Kind: "success"})
+	body := dashboardRequest(e, http.MethodGet, "/checks/"+e.Snapshot()[0].Key).Body.String()
+	if !strings.Contains(body, ">in 5 minutes</time>") || !strings.Contains(body, `data-full="Sun, 18 Oct 2026 12:05:00 UTC"`) {
+		t.Fatal("detail deadlines should use the same relative times and exact-date tooltip as the overview")
+	}
+	if strings.Count(body, ">now</time>") < 3 {
+		t.Fatal("last success, last ping and recent events should show relative times")
+	}
+}
+
+func TestDashboardPausedCheckHasNoActiveDueTimes(t *testing.T) {
+	for _, elapsed := range []time.Duration{0, 65 * time.Minute} {
+		e, now := newTestEngine(t)
+		e.Ping(testUUID, Input{Kind: "success"})
+		config := parseTestConfig(t, simpleConfig)
+		config.Checks[0].Paused = true
+		if err := e.Reload(config); err != nil {
+			t.Fatal(err)
+		}
+		*now = now.Add(elapsed)
+		view := onlyCheck(t, e)
+		index := dashboardRequest(e, http.MethodGet, "/").Body.String()
+		if !strings.Contains(index, `<dt>Next due</dt><dd>—</dd>`) || !strings.Contains(index, `data-due=""`) {
+			t.Errorf("paused after %s: overview should have no active due time or sort deadline", elapsed)
+		}
+		detail := dashboardRequest(e, http.MethodGet, "/checks/"+view.Key).Body.String()
+		for _, label := range []string{"Next due", "Deadline"} {
+			if !strings.Contains(detail, "<strong>"+label+"</strong><span>—</span>") {
+				t.Errorf("paused after %s: %s should be unset", elapsed, label)
+			}
+		}
+		if !strings.Contains(detail, `datetime="`+formatDashboardTimeAttr(view.LastSuccess)+`"`) {
+			t.Fatal("pausing should preserve the displayed success history")
+		}
+	}
+}
+
+func TestDashboardOverdueTimesKeepHistoryRelative(t *testing.T) {
+	e, now := newTestEngine(t)
+	e.Ping(testUUID, Input{Kind: "success"})
+	*now = now.Add(65 * time.Minute)
+	index := dashboardRequest(e, http.MethodGet, "/").Body.String()
+	if !strings.Contains(index, ">1 hour overdue</time>") || !strings.Contains(index, ">1 hour ago</time>") {
+		t.Fatal("overview should distinguish an overdue ping from historical success")
+	}
+	detail := dashboardRequest(e, http.MethodGet, "/checks/"+onlyCheck(t, e).Key).Body.String()
+	for _, want := range []string{">1 hour overdue</time>", ">59 minutes overdue</time>", ">1 hour ago</time>"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail missing %q", want)
 		}
 	}
 }

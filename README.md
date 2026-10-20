@@ -3,7 +3,15 @@
 A small, self-hosted service for monitoring heartbeats and scheduled jobs.
 One Go process, YAML configuration, PostgreSQL state, and bounded in-memory ping logs.
 
-## MVP scope
+[Run locally](#run) · [Configuration](#configuration-reference) · [Ping API](#ping-and-state-semantics)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.jpg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/dashboard-light.jpg">
+  <img src="docs/images/dashboard-light.jpg" alt="Healthchecks dashboard with six fictional checks, status filters, sorting, and light and dark themes.">
+</picture>
+
+## Features
 
 - Healthchecks-compatible HTTP pings: success, start, failure, logs, exit codes, and run IDs.
 - Interval and cron schedules with IANA time zones.
@@ -41,6 +49,12 @@ Open `http://localhost:8000/`. Send a success ping to `/ping/<uuid>` from the jo
 `-check` and `-list-ping-urls` validate YAML and its environment references without connecting to PostgreSQL.
 Database settings are required only when starting the server.
 Keep deployment configuration and credentials out of a public repository.
+
+Set `HC_SITE_NAME` to change the dashboard name; it defaults to `Healthchecks`.
+The dashboard supports system, light, and dark themes and stores the selection in browser `localStorage`.
+Relative times show the exact date in the browser’s time zone on hover or keyboard focus. Click a status counter to filter checks;
+sort by state, name, or next due. Filter and sort preferences are also stored in the browser.
+Paused checks have no active due time. Missed due times are shown as overdue; full dates remain available in tooltips.
 
 ### Container
 
@@ -221,6 +235,9 @@ go vet ./...
 go test -race ./...
 bash scripts/show-build-context.sh
 ```
+
+To preview the dashboard with fictional checks and no PostgreSQL, run `go run ./scripts/dashboard-preview`
+and open `http://127.0.0.1:18081/`. The demo uses a fixed snapshot of check states.
 
 Tests include HTTP lifecycle scenarios, state/deadline boundaries, reload and ConfigMap symlink replacement,
 webhook retries and in-flight recovery, bounded history, and HTML escaping.

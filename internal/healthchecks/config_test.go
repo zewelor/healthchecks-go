@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testUUID = "11111111-1111-4111-8111-111111111111"
@@ -37,11 +38,42 @@ func TestConfigExample(t *testing.T) {
 	}
 }
 
+func TestSiteNameFromEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name, value, want string
+		present           bool
+	}{
+		{name: "override", value: "  Example Status  ", present: true, want: "Example Status"},
+		{name: "default", want: "Healthchecks"},
+		{name: "whitespace defaults", value: " \t\n ", present: true, want: "Healthchecks"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := ParseConfig([]byte(simpleConfig), func(key string) (string, bool) {
+				if key == "HC_SITE_NAME" {
+					return tc.value, tc.present
+				}
+				return "", false
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := c.SiteName; got != tc.want {
+				t.Fatalf("SiteName = %q, want %q", got, tc.want)
+			}
+			engine := NewEngine(c, func() time.Time { return time.Unix(0, 0) })
+			if got := engine.Info().SiteName; got != tc.want {
+				t.Fatalf("ServerView.SiteName = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 	for name, input := range map[string]string{
 		"null boolean":           strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    notify: null", 1),
 		"numeric name":           strings.Replace(simpleConfig, "name: Heartbeat", "name: 123", 1),
 		"unknown field":          strings.Replace(simpleConfig, "every: 5m", "period: 5m", 1),
+		"site name in YAML":      strings.Replace(simpleConfig, "public_url:", "site_name: YAML name\npublic_url:", 1),
 		"obsolete region field":  strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    region: region-a", 1),
 		"duplicate field":        strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    every: 6m", 1),
 		"both schedules":         strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    cron: '* * * * *'", 1),

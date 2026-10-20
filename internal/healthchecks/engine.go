@@ -38,9 +38,9 @@ type CheckView struct {
 }
 
 type ServerView struct {
-	Started                  time.Time
-	ReloadError, WebhookName string
-	StorageError             string
+	Started                            time.Time
+	ReloadError, WebhookName, SiteName string
+	StorageError                       string
 }
 
 type checkState struct {
@@ -166,7 +166,11 @@ func (e *Engine) SetReloadError(message string) {
 func (e *Engine) Info() ServerView {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	v := ServerView{Started: e.started, ReloadError: e.reloadError, StorageError: e.storageError}
+	siteName := "Healthchecks"
+	if e.applied != nil && e.applied.SiteName != "" {
+		siteName = e.applied.SiteName
+	}
+	v := ServerView{Started: e.started, ReloadError: e.reloadError, SiteName: siteName, StorageError: e.storageError}
 	if e.webhook != nil {
 		v.WebhookName = e.webhook.Name
 	}
@@ -310,7 +314,7 @@ func (e *Engine) snapshot() ([]CheckView, error) {
 
 func (s *checkState) view() CheckView {
 	c := s.config
-	schedule := "Every " + c.Every
+	schedule := "Every " + formatScheduleInterval(c.interval)
 	if c.Cron != "" {
 		schedule = c.Cron + " (" + c.Timezone + ")"
 	}

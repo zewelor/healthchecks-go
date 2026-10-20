@@ -87,3 +87,32 @@ func parseSchedule(expression, zone string) (cron.Schedule, error) {
 	}
 	return s, nil
 }
+
+func formatScheduleInterval(value time.Duration) string {
+	var parts []string
+	for _, unit := range []struct {
+		size time.Duration
+		name string
+	}{
+		{24 * time.Hour, "day"}, {time.Hour, "hour"}, {time.Minute, "minute"},
+	} {
+		amount := value / unit.size
+		if amount == 0 {
+			continue
+		}
+		name := unit.name
+		if amount != 1 {
+			name += "s"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", amount, name))
+		value %= unit.size
+	}
+	if value > 0 {
+		name := "seconds"
+		if value == time.Second {
+			name = "second"
+		}
+		parts = append(parts, strconv.FormatFloat(value.Seconds(), 'f', -1, 64)+" "+name)
+	}
+	return strings.Join(parts, " ")
+}
