@@ -77,6 +77,16 @@ With a nonempty `HC_METRICS_KEY`, `/metrics` requires `Authorization: Bearer <HC
 
 ## Runtime
 
+Application logs use structured text on stderr. `HC_LOG_LEVEL` sets the minimum severity:
+`debug`, `info` (default), `warn`, or `error` (case-insensitive). Invalid values prevent startup.
+Changes require a restart.
+
+Accepted pings emit `INFO` after the state transaction succeeds, including the check name,
+dashboard key, event kind, resulting status, whether the check is paused (`ignored`), and exit code when supplied.
+Ping UUIDs, URLs, run IDs, request bodies, and authorization headers are omitted.
+Successful configuration reloads emit `WARN`; reload, storage, and server errors emit `ERROR`.
+Set `HC_LOG_LEVEL=warn` to silence ping logs while retaining reloads and errors.
+
 PostgreSQL needs a persistent session; transaction-mode connection poolers are unsupported.
 The container reads configuration as UID 65532. Mount the configuration directory for reloads;
 Kubernetes ConfigMap mounts must not use `subPath`.

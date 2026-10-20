@@ -3,6 +3,7 @@ package healthchecks
 import (
 	"context"
 	"crypto/rand"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -179,7 +180,28 @@ func (e *Engine) Info() ServerView {
 
 func (e *Engine) Ping(id string, in Input) (bool, error) {
 	found := false
-	err := e.transact(context.Background(), func() { found = e.pingLocked(id, in) })
+	var attrs []slog.Attr
+	err := e.transact(context.Background(), func() {
+		found = e.pingLocked(id, in)
+		if found {
+			s := e.checks[id]
+			attrs = []slog.Attr{
+				slog.String("check", s.config.Name),
+				slog.String("key", s.config.Key),
+				slog.String("kind", in.Kind),
+				slog.String("status", s.status),
+				slog.Bool("ignored", s.config.Paused),
+			}
+			if in.ExitCode != nil {
+				attrs = append(attrs, slog.Int("exit_code", *in.ExitCode))
+			}
+		}
+	})
+	if err != nil {
+		slog.Error("Ping could not be saved", "error", err)
+	} else if found {
+		slog.LogAttrs(context.Background(), slog.LevelInfo, "Ping accepted", attrs...)
+	}
 	return found, err
 }
 

@@ -5,11 +5,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,12 +21,34 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Print(err)
+		slog.Error("Application stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
+func configureLogging(value string, output io.Writer) error {
+	var level slog.Level
+	switch strings.ToLower(value) {
+	case "", "info":
+		level = slog.LevelInfo
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return errors.New("HC_LOG_LEVEL must be debug, info, warn or error")
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level})))
+	slog.SetLogLoggerLevel(slog.LevelError)
+	return nil
+}
+
 func run() error {
+	if err := configureLogging(os.Getenv("HC_LOG_LEVEL"), os.Stderr); err != nil {
+		return err
+	}
 	path := flag.String("config", "config.yml", "YAML configuration file")
 	listen := flag.String("listen", ":8000", "HTTP listen address")
 	check := flag.Bool("check", false, "validate configuration and required environment without starting the server")
@@ -73,9 +97,9 @@ func run() error {
 	wg.Go(func() {
 		w.Run(ctx, func(err error) {
 			if err != nil {
-				log.Printf("Configuration reload rejected: %v", err)
+				slog.Error("Configuration reload rejected", "error", err)
 			} else {
-				log.Print("Configuration reloaded.")
+				slog.Warn("Configuration reloaded")
 			}
 		})
 	})
@@ -88,7 +112,7 @@ func run() error {
 				return
 			case <-ticker.C:
 				if err := e.Evaluate(); err != nil {
-					log.Printf("State evaluation failed: %v", err)
+					slog.Error("State evaluation failed", "error", err)
 				}
 			}
 		}
@@ -99,11 +123,11 @@ func run() error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("HTTP shutdown failed: %v", err)
+			slog.Error("HTTP shutdown failed", "error", err)
 			_ = server.Close()
 		}
 	})
-	log.Printf("Starting HTTP server on %s; check state is stored in PostgreSQL.", *listen)
+	slog.Info("Starting HTTP server; check state is stored in PostgreSQL", "listen", *listen)
 	err = server.Serve(listener)
 	stop()
 	wg.Wait()

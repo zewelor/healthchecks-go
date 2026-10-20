@@ -50,6 +50,7 @@ Optional fields: `timezone`, `tags`, `paused`, `notify`, and `depends_on_regions
 Set `public_url` to the service's HTTP(S) origin. YAML changes reload automatically.
 
 Set `HC_SITE_NAME` to customize the dashboard title. Theme, filter, and sort preferences are saved in the browser.
+Set `HC_LOG_LEVEL` to `debug`, `info` (default), `warn`, or `error` to filter application logs.
 For cron syntax, webhooks, and other details, see the [reference](docs/reference.md).
 
 ## Pings and metrics

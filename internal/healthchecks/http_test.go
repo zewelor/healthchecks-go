@@ -1,11 +1,86 @@
 package healthchecks
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func capturePingLogs(t *testing.T, level slog.Level) *bytes.Buffer {
+	t.Helper()
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: level})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &output
+}
+
+func TestPingApplicationLogs(t *testing.T) {
+	for _, tc := range []struct {
+		method, suffix, kind, status string
+		paused                       bool
+		exitCode                     *int
+	}{
+		{method: "GET", kind: "success", status: "up"},
+		{method: "HEAD", suffix: "/start", kind: "start", status: "awaiting"},
+		{method: "POST", suffix: "/fail", kind: "fail", status: "down"},
+		{method: "POST", suffix: "/log", kind: "log", status: "awaiting"},
+		{method: "GET", suffix: "/0", kind: "success", status: "up", exitCode: new(0)},
+		{method: "GET", suffix: "/7", kind: "fail", status: "down", exitCode: new(7)},
+		{method: "GET", kind: "success", status: "paused", paused: true},
+	} {
+		t.Run(tc.method+tc.suffix+tc.status, func(t *testing.T) {
+			output := capturePingLogs(t, slog.LevelInfo)
+			e, _ := newTestEngine(t)
+			if tc.paused {
+				config := parseTestConfig(t, simpleConfig)
+				config.Checks[0].Paused = true
+				if err := e.Reload(config); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h := NewHandler(e, "secret-token")
+			w := request(h, tc.method, "/ping/"+testUUID+tc.suffix+"?rid="+otherUUID, "secret-body", "Bearer secret-token")
+			if w.Code != 200 {
+				t.Fatal(w.Code)
+			}
+			var entry map[string]any
+			if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
+				t.Fatalf("expected one log entry: %s (%v)", output.String(), err)
+			}
+			if entry["level"] != "INFO" || entry["msg"] != "Ping accepted" || entry["check"] != "Heartbeat" || entry["key"] != onlyCheck(t, e).Key || entry["kind"] != tc.kind || entry["status"] != tc.status || entry["ignored"] != tc.paused {
+				t.Fatalf("unexpected ping log: %s", output.String())
+			}
+			if tc.exitCode != nil {
+				if entry["exit_code"] != float64(*tc.exitCode) {
+					t.Fatalf("missing exit code: %s", output.String())
+				}
+			} else if _, present := entry["exit_code"]; present {
+				t.Fatal("unexpected exit code")
+			}
+			for _, secret := range []string{testUUID, otherUUID, "secret-body", "secret-token", "/ping/"} {
+				if strings.Contains(output.String(), secret) {
+					t.Fatalf("sensitive request data in logs: %s", output.String())
+				}
+			}
+		})
+	}
+}
+
+func TestWarnLevelSuppressesPingLogs(t *testing.T) {
+	output := capturePingLogs(t, slog.LevelWarn)
+	e, _ := newTestEngine(t)
+	if got := request(NewHandler(e, ""), "POST", "/ping/"+testUUID+"/fail", "", ""); got.Code != 200 {
+		t.Fatal(got.Code)
+	}
+	if output.Len() != 0 || onlyCheck(t, e).Status != "down" {
+		t.Fatalf("WARN must suppress ping logs while still recording failure: %s", output.String())
+	}
+}
 
 func request(h http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -58,6 +133,7 @@ func TestPingRoutesAndMetrics(t *testing.T) {
 }
 
 func TestPingInvalidRequestsDoNotChangeState(t *testing.T) {
+	output := capturePingLogs(t, slog.LevelInfo)
 	e, _ := newTestEngine(t)
 	h := NewHandler(e, "key")
 	for _, tc := range []struct {
@@ -79,6 +155,9 @@ func TestPingInvalidRequestsDoNotChangeState(t *testing.T) {
 	}
 	if v := onlyCheck(t, e); v.Status != "awaiting" || len(v.Events) != 0 {
 		t.Fatal("invalid requests changed check")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("invalid requests logged as accepted: %s", output.String())
 	}
 }
 
