@@ -1,5 +1,6 @@
-# Only application sources and module locks belong in the build context.
+# Only application sources, module locks, and the license belong in the build context.
 *
+!LICENSE
 !go.mod
 !go.sum
 !cmd/

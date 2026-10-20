@@ -27,6 +27,7 @@ cp config.example.yml config.yml
 docker run --rm -p 127.0.0.1:8000:8000 \
   -e DB_HOST -e DB_PORT -e DB_NAME \
   -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
+  -e HC_SITE_NAME -e HC_METRICS_KEY \
   -v "$PWD:/config:ro" ghcr.io/zewelor/healthchecks-go:latest
 ```
 
@@ -71,3 +72,5 @@ go test -race ./...
 
 For a dashboard demo without PostgreSQL, run `go run ./scripts/dashboard-preview` and open <http://127.0.0.1:18081/>.
 See the [reference](docs/reference.md#testing) for PostgreSQL integration tests and compatibility checks.
+
+Licensed under [MIT](LICENSE).

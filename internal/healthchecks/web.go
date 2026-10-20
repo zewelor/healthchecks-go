@@ -21,6 +21,7 @@ type dashboardData struct {
 	Down, Grace      int
 	Awaiting, Paused int
 	HasCurrent       bool
+	NotFound         bool
 	Script           template.JS
 	ThemeScript      template.JS
 	Now              time.Time
@@ -59,7 +60,7 @@ const dashboardHTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{if .HasCurrent}}{{.Current.Name}} · {{end}}{{.Info.SiteName}}</title>
+  <title>{{if .NotFound}}Check not found · {{else if .HasCurrent}}{{.Current.Name}} · {{end}}{{.Info.SiteName}}</title>
   <script>{{.ThemeScript}}</script>
   <style>
     :root { color-scheme: light; --bg: #f8fafc; --text: #0f172a; --link: #0369a1; --link-hover: #075985; --accent: #475569; --muted: #475569; --border-strong: #cbd5e1; --surface: #fff; --border: #e2e8f0; --inset: #f1f5f9; --secondary: #334155; --error-border: #fda4af; --error-bg: #fff1f2; --error-text: #9f1239; --up: #15803d; --down: #be123c; --grace: #92400e; --control-bg: #f3f3f3; --control-text: #151515; }
@@ -163,7 +164,16 @@ const dashboardHTML = `<!doctype html>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="shell">
-    {{if .HasCurrent}}
+    {{if .NotFound}}
+      <header class="topline">
+        <div><h1>Check not found</h1></div>
+        {{template "themeControl"}}
+      </header>
+      <main id="main">
+        <p class="muted">This page does not match a configured check.</p>
+        <a class="back" href="/">← All checks</a>
+      </main>
+    {{else if .HasCurrent}}
       <a class="back" href="/">← All checks</a>
       <header class="topline">
         <div><h1>{{.Current.Name}}</h1>{{if .Current.Tags}}<p class="lede">{{.Current.Tags}}</p>{{end}}</div>
@@ -363,21 +373,22 @@ const dashboardRefreshScript = `(() => {
   window.setTimeout(() => window.location.reload(), 15000);
 })();`
 
-const dashboardNotFound = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Check not found</title></head><body style="margin:0;background:#020617;color:#e2e8f0;font:16px system-ui,sans-serif"><main style="max-width:40rem;margin:12vh auto;padding:2rem"><h1>Check not found</h1><p style="color:#94a3b8">This page does not match a configured check.</p><a href="/" style="color:#7dd3fc">Return to all checks</a></main></body></html>`
-
 func renderDashboard(w http.ResponseWriter, r *http.Request, e *Engine) {
 	setDashboardHeaders(w)
+	data := dashboardData{Script: template.JS(dashboardRefreshScript), ThemeScript: template.JS(dashboardThemeScript), Now: e.now()}
 	if r.URL.EscapedPath() != r.URL.Path || (r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/checks/")) {
-		writeDashboardError(w, r, http.StatusNotFound, dashboardNotFound)
+		data.Info = e.Info()
+		renderDashboardNotFound(w, r, data)
 		return
 	}
 
 	views := e.Snapshot()
-	data := dashboardData{Info: e.Info(), Checks: views, Total: len(views), Script: template.JS(dashboardRefreshScript), ThemeScript: template.JS(dashboardThemeScript), Now: e.now()}
+	data.Info = e.Info()
+	data.Checks, data.Total = views, len(views)
 	if r.URL.Path != "/" {
 		key := strings.TrimPrefix(r.URL.Path, "/checks/")
 		if key == "" || strings.Contains(key, "/") {
-			writeDashboardError(w, r, http.StatusNotFound, dashboardNotFound)
+			renderDashboardNotFound(w, r, data)
 			return
 		}
 		found := false
@@ -390,7 +401,7 @@ func renderDashboard(w http.ResponseWriter, r *http.Request, e *Engine) {
 			}
 		}
 		if !found {
-			writeDashboardError(w, r, http.StatusNotFound, dashboardNotFound)
+			renderDashboardNotFound(w, r, data)
 			return
 		}
 	}
@@ -414,15 +425,23 @@ func renderDashboard(w http.ResponseWriter, r *http.Request, e *Engine) {
 		writeDashboardError(w, r, http.StatusMethodNotAllowed, `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Method not allowed</title></head><body><h1>Method not allowed</h1><p>Use GET or HEAD.</p></body></html>`)
 		return
 	}
+	renderDashboardPage(w, r, http.StatusOK, data)
+}
 
+func renderDashboardNotFound(w http.ResponseWriter, r *http.Request, data dashboardData) {
+	data.NotFound = true
+	renderDashboardPage(w, r, http.StatusNotFound, data)
+}
+
+func renderDashboardPage(w http.ResponseWriter, r *http.Request, status int, data dashboardData) {
 	var body bytes.Buffer
 	if err := dashboardTemplate.Execute(&body, data); err != nil {
 		writeDashboardError(w, r, http.StatusInternalServerError, `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dashboard unavailable</title></head><body><h1>Dashboard unavailable</h1></body></html>`)
 		return
 	}
 	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
-	w.WriteHeader(http.StatusOK)
-	if r.Method == http.MethodGet {
+	w.WriteHeader(status)
+	if r.Method != http.MethodHead {
 		_, _ = w.Write(body.Bytes())
 	}
 }

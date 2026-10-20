@@ -291,3 +291,30 @@ func TestDashboardOverdueTimesKeepHistoryRelative(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardNotFoundKeepsSiteIdentityAndThemeControls(t *testing.T) {
+	e := dashboardEngine(t)
+	e.applied.SiteName = "Example status"
+	path := "/checks/missing"
+	w := dashboardRequest(e, http.MethodGet, path)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"<title>Check not found · Example status</title>",
+		`aria-label="Theme"`,
+		`aria-label="System theme"`,
+		`aria-label="Light theme"`,
+		`aria-label="Dark theme"`,
+		`href="/"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("404 page missing %q", want)
+		}
+	}
+	head := dashboardRequest(e, http.MethodHead, path)
+	if head.Code != http.StatusNotFound || head.Body.Len() != 0 || head.Header().Get("Content-Length") != w.Header().Get("Content-Length") {
+		t.Fatal("404 HEAD should retain GET status and length without a response body")
+	}
+}

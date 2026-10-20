@@ -9,6 +9,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /healthchecks-go ./cmd/healthchecks-go
 
 FROM scratch
+COPY LICENSE /LICENSE
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /healthchecks-go /healthchecks-go
 WORKDIR /config
