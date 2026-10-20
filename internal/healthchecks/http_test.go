@@ -110,7 +110,7 @@ func TestPingRoutesAndMetrics(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 	w = request(h, "GET", "/metrics", "", "Bearer test-metrics-key")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "} 0\n") || strings.Contains(w.Body.String(), testUUID) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "} 0\n") || strings.Contains(w.Body.String(), testUUID) || strings.Contains(w.Body.String(), `tags=`) {
 		t.Fatalf("metrics: %d %s", w.Code, w.Body.String())
 	}
 	request(h, "POST", base+"/log", strings.Repeat("x", BodyLimit*3), "")

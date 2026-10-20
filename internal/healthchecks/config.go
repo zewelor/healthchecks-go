@@ -44,7 +44,6 @@ type Config struct {
 type CheckConfig struct {
 	UUID             string   `yaml:"uuid"`
 	Name             string   `yaml:"name"`
-	Tags             string   `yaml:"tags"`
 	Every            string   `yaml:"every"`
 	Cron             string   `yaml:"cron"`
 	Timezone         string   `yaml:"timezone"`
@@ -68,7 +67,6 @@ type WebhookConfig struct {
 type WebhookEvent struct {
 	Status           string    `json:"status"`
 	Name             string    `json:"name"`
-	Tags             []string  `json:"tags"`
 	UniqueKey        string    `json:"unique_key"`
 	DependsOnRegions []string  `json:"depends_on_regions"`
 	Reason           string    `json:"reason"`
@@ -177,9 +175,6 @@ func (c *CheckConfig) validate() error {
 	}
 	if !uuidPattern.MatchString(c.UUID) {
 		return errors.New("uuid must be a lowercase canonical UUID")
-	}
-	if len(c.Tags) > 500 {
-		return errors.New("tags exceeds 500 bytes")
 	}
 	if (c.Every == "") == (c.Cron == "") {
 		return errors.New("specify exactly one of every or cron")
@@ -308,7 +303,7 @@ func (w *WebhookConfig) validate(lookup func(string) (string, bool)) error {
 		return errors.New("invalid webhook.body template")
 	}
 	for _, status := range []string{"down", "up"} {
-		_, err := w.render(WebhookEvent{Status: status, Name: "Example \"check\"", Message: "Example\nmessage", Time: time.Unix(0, 0).UTC(), Tags: []string{}, DependsOnRegions: []string{}})
+		_, err := w.render(WebhookEvent{Status: status, Name: "Example \"check\"", Message: "Example\nmessage", Time: time.Unix(0, 0).UTC(), DependsOnRegions: []string{}})
 		if err != nil {
 			return err
 		}

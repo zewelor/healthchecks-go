@@ -135,7 +135,6 @@ func (e *Engine) prepareDeliveryLocked(parent context.Context) (*delivery, time.
 		event := WebhookEvent{
 			Status:           status,
 			Name:             s.config.Name,
-			Tags:             strings.Fields(s.config.Tags),
 			UniqueKey:        s.config.Key,
 			DependsOnRegions: append([]string{}, s.config.DependsOnRegions...),
 			Reason:           s.reason,

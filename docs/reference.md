@@ -6,7 +6,7 @@
 
 UUIDs must be unique and use lowercase canonical form. Removing a check deletes its state.
 Intervals measure elapsed time. Cron defaults to `UTC` and accepts IANA zones such as `Europe/London`; `Local` is rejected.
-`tags` is a space-separated string. `depends_on_regions` is metadata for external alert routing, not built-in inhibition.
+`depends_on_regions` is metadata for external alert routing, not built-in inhibition.
 
 `public_url` accepts an HTTP(S) origin without a subpath, credentials, query, or fragment.
 CLI overrides: `-config` (default `config.yml`) and `-listen` (default `:8000`).
@@ -67,7 +67,7 @@ Database failures return `503`; retrying an uncertain response can record a ping
 
 ## Metrics and health
 
-`hc_check_up` has `name`, `tags`, `unique_key`, and `depends_on_regions` labels.
+`hc_check_up` has `name`, `unique_key`, and `depends_on_regions` labels.
 Only `down` maps to 0; other states map to 1.
 With a nonempty `HC_METRICS_KEY`, `/metrics` requires `Authorization: Bearer <HC_METRICS_KEY>`.
 

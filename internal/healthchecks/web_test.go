@@ -21,7 +21,6 @@ webhook:
 checks:
   - uuid: 11111111-1111-4111-8111-111111111111
     name: Heartbeat <img src=x onerror=alert(1)>
-    tags: system, core
     every: 5m
     grace: 1m
     notify: true

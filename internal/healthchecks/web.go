@@ -111,8 +111,6 @@ const dashboardHTML = `<!doctype html>
     .status-grace { color: var(--grace); }
     .status-awaiting { color: var(--link); }
     .status-paused, .status-unknown { color: var(--secondary); }
-    .meta-row { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .8rem; }
-    .tag { padding: .16rem .48rem; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--secondary); font-size: .74rem; overflow-wrap: anywhere; }
     .facts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .8rem; margin: 1rem 0 0; }
     .facts div { min-width: 0; }
     .facts dt { color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -176,7 +174,7 @@ const dashboardHTML = `<!doctype html>
     {{else if .HasCurrent}}
       <a class="back" href="/">← All checks</a>
       <header class="topline">
-        <div><h1>{{.Current.Name}}</h1>{{if .Current.Tags}}<p class="lede">{{.Current.Tags}}</p>{{end}}</div>
+        <div><h1>{{.Current.Name}}</h1></div>
         <div class="detail-status">{{template "themeControl"}}<span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
       </header>
       <main id="main">
@@ -241,7 +239,6 @@ const dashboardHTML = `<!doctype html>
             {{range .Checks}}
               <article class="check-card status-{{statusClass .Status}}" data-status="{{.Status}}" data-name="{{.Name}}" data-due="{{if ne .Status "paused"}}{{timeAttr .NextDue}}{{end}}">
                 <div class="card-top"><h2 class="check-name"><a class="check-link" href="/checks/{{.Key}}">{{.Name}}</a></h2><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
-                {{if .Tags}}<div class="meta-row"><span class="tag">{{.Tags}}</span></div>{{end}}
                 <dl class="facts">
                   <div><dt>Last success</dt><dd>{{template "timestamp" (timestamp .LastSuccess $.Now)}}</dd></div>
                   <div><dt>Next due</dt><dd>{{template "timestamp" (dueTimestamp .NextDue $.Now .Status)}}</dd></div>

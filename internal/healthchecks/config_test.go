@@ -75,6 +75,7 @@ func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 		"unknown field":          strings.Replace(simpleConfig, "every: 5m", "period: 5m", 1),
 		"site name in YAML":      strings.Replace(simpleConfig, "public_url:", "site_name: YAML name\npublic_url:", 1),
 		"obsolete region field":  strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    region: region-a", 1),
+		"obsolete tags field":    strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    tags: critical api", 1),
 		"duplicate field":        strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    every: 6m", 1),
 		"both schedules":         strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    cron: '* * * * *'", 1),
 		"zero grace":             strings.Replace(simpleConfig, "grace: 1m", "grace: 0s", 1),
@@ -183,10 +184,11 @@ func TestWebhookConfigInterpolationAndJSON(t *testing.T) {
 		t.Fatal("incorrect URL expansion")
 	}
 	for name, input := range map[string]string{
-		"missing env":          strings.Replace(base, "${TEST_WEBHOOK}", "${NOT_CONFIGURED}", 1),
-		"malformed expression": strings.Replace(base, "${TEST_WEBHOOK}", "${MISSING", 1),
-		"empty name":           strings.Replace(base, "name: example", "name: ''", 1),
-		"bad body":             strings.Replace(base, "{\"content\": {{ json .message }}}", "{{ .missing }}", 1),
+		"missing env":            strings.Replace(base, "${TEST_WEBHOOK}", "${NOT_CONFIGURED}", 1),
+		"malformed expression":   strings.Replace(base, "${TEST_WEBHOOK}", "${MISSING", 1),
+		"empty name":             strings.Replace(base, "name: example", "name: ''", 1),
+		"bad body":               strings.Replace(base, "{\"content\": {{ json .message }}}", "{{ .missing }}", 1),
+		"obsolete tags template": strings.Replace(base, "{{ json .message }}", "{{ json .tags }}", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := ParseConfig([]byte(input), os.LookupEnv)

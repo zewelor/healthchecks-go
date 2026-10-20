@@ -146,7 +146,6 @@ checks:
     name: Backup
     every: 5m
     grace: 1m
-    tags: backup critical
     depends_on_regions: [region-b, region-a]
     notify: true
 `, receiver.URL, uuid)
@@ -206,7 +205,7 @@ checks:
 		t.Fatalf("attempts: %d", attempts.Load())
 	}
 	status, metrics := call("GET", "/metrics", "", "test-token")
-	if status != 200 || !strings.Contains(metrics, `} 0`) || !strings.Contains(metrics, `depends_on_regions="region-a,region-b"`) || strings.Contains(metrics, `,region="`) || strings.Contains(metrics, uuid) {
+	if status != 200 || !strings.Contains(metrics, `} 0`) || !strings.Contains(metrics, `depends_on_regions="region-a,region-b"`) || strings.Contains(metrics, `,region="`) || strings.Contains(metrics, `tags=`) || strings.Contains(metrics, uuid) {
 		t.Fatal(metrics)
 	}
 	view := e.Snapshot()[0]
