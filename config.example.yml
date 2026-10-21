@@ -10,6 +10,7 @@ checks:
 
   - uuid: 22222222-2222-4222-8222-222222222222
     name: Daily backup
+    description: Encrypted database backup. Verify the archive before reporting success.
     cron: "0 2 * * *"
     timezone: Europe/London
     grace: 30m

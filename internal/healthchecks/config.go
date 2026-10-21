@@ -44,6 +44,7 @@ type Config struct {
 type CheckConfig struct {
 	UUID             string   `yaml:"uuid"`
 	Name             string   `yaml:"name"`
+	Description      string   `yaml:"description"`
 	Every            string   `yaml:"every"`
 	Cron             string   `yaml:"cron"`
 	Timezone         string   `yaml:"timezone"`

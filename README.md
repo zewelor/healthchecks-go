@@ -46,7 +46,7 @@ Open <http://localhost:8000/>. Run one instance; check state survives restarts, 
 
 Start with [config.example.yml](config.example.yml). Each check needs `uuid`, `name`, `grace`,
 and either `every` (such as `5m` or `24h`) or `cron`. Keep UUIDs stable to preserve ping URLs and state.
-Optional fields: `timezone`, `paused`, `notify`, and `depends_on_regions`.
+Optional fields: `description` (plain text), `timezone`, `paused`, `notify`, and `depends_on_regions`.
 Set `public_url` to the service's HTTP(S) origin. YAML changes reload automatically.
 
 Set `HC_SITE_NAME` to customize the dashboard title. Theme, filter, and sort preferences are saved in the browser.
@@ -71,7 +71,6 @@ go vet ./...
 go test -race ./...
 ```
 
-For a dashboard demo without PostgreSQL, run `go run ./scripts/dashboard-preview` and open <http://127.0.0.1:18081/>.
 See the [reference](docs/reference.md#testing) for PostgreSQL integration tests and compatibility checks.
 
 Licensed under [MIT](LICENSE).

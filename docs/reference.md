@@ -8,6 +8,10 @@ UUIDs must be unique and use lowercase canonical form. Removing a check deletes 
 Intervals measure elapsed time. Cron defaults to `UTC` and accepts IANA zones such as `Europe/London`; `Local` is rejected.
 `depends_on_regions` is metadata for external alert routing, not built-in inhibition.
 
+`description` is optional plain text, including multiple lines with YAML `|`. HTML and Markdown are not rendered.
+It appears on hover or keyboard focus over the check name and below the name on its detail page.
+Changing it reloads without resetting check state or ping history.
+
 `public_url` accepts an HTTP(S) origin without a subpath, credentials, query, or fragment.
 CLI overrides: `-config` (default `config.yml`) and `-listen` (default `:8000`).
 Invalid YAML reloads keep the previous configuration active. Environment changes require a restart.
@@ -60,6 +64,9 @@ GET, HEAD, and POST support `/ping/<uuid>` with these suffixes:
 HEAD records a ping too. `/start` and `/log` do not refresh the success deadline.
 Use `rid=<uuid>` to correlate start and completion; run IDs must be lowercase canonical UUIDs.
 Limits: 128 checks, 20 recent events per check, and 8192 bytes per body (`Ping-Body-Limit`). Longer bodies are truncated.
+The check detail page shows these recent pings newest first, with execution duration and expandable logs/run IDs.
+This is an in-memory ping history, cleared on restart; it does not record deadline transitions or webhook deliveries.
+Automatic page refresh pauses while log or run details are open.
 
 Grace applies both to missed successes and unfinished executions. Explicit failures act immediately.
 Paused checks ignore pings for state changes; unpausing starts a new observation period.

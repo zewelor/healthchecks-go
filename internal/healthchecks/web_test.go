@@ -317,3 +317,55 @@ func TestDashboardNotFoundKeepsSiteIdentityAndThemeControls(t *testing.T) {
 		t.Fatal("404 HEAD should retain GET status and length without a response body")
 	}
 }
+
+func TestDashboardDescriptionIsOptionalPlainTextAndReloads(t *testing.T) {
+	e, _ := newTestEngine(t)
+	key := onlyCheck(t, e).Key
+	config := parseTestConfig(t, strings.Replace(simpleConfig, "    every:", "    description: |\n      Back up <b>all databases</b> & verify.\n      Contact: ops@example.test\n    every:", 1))
+	e.Ping(testUUID, Input{Kind: "success"})
+	if err := e.Reload(config); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/checks/" + key} {
+		body := dashboardRequest(e, http.MethodGet, path).Body.String()
+		if !strings.Contains(body, "Back up &lt;b&gt;all databases&lt;/b&gt; &amp; verify.") || !strings.Contains(body, "Contact: ops@example.test") || strings.Contains(body, "<b>all databases</b>") {
+			t.Fatalf("%s: description must be visible as escaped plain text", path)
+		}
+		if path == "/" && !strings.Contains(body, `aria-describedby="description-`+key+`"`) {
+			t.Fatal("check name must expose its description through the styled tooltip")
+		}
+	}
+	if got := onlyCheck(t, e); got.Key != key || got.Status != "up" || len(got.Events) != 1 {
+		t.Fatal("description reload reset identity or runtime history")
+	}
+	if err := e.Reload(parseTestConfig(t, simpleConfig)); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/checks/" + key} {
+		body := dashboardRequest(e, http.MethodGet, path).Body.String()
+		if strings.Contains(body, "Contact: ops@example.test") {
+			t.Fatalf("%s: removed description still displayed", path)
+		}
+	}
+}
+
+func TestDashboardEventHistoryHasReadableOutcomesAndNewestFirst(t *testing.T) {
+	e, now := newTestEngine(t)
+	e.Ping(testUUID, Input{Kind: "start", RID: testUUID})
+	*now = now.Add(2 * time.Second)
+	code := 2
+	e.Ping(testUUID, Input{Kind: "fail", RID: testUUID, ExitCode: &code, Body: "connection refused"})
+	*now = now.Add(time.Minute)
+	e.Ping(testUUID, Input{Kind: "start", RID: otherUUID})
+	*now = now.Add(4 * time.Second)
+	e.Ping(testUUID, Input{Kind: "success", RID: otherUUID, Body: "retry succeeded"})
+	body := dashboardRequest(e, http.MethodGet, "/checks/"+onlyCheck(t, e).Key).Body.String()
+	for _, want := range []string{"Event history", "Succeeded", "Failed", "Started", "Duration: 4s", "Exit code: 2", "cleared on restart"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("event history missing %q", want)
+		}
+	}
+	if strings.Index(body, "retry succeeded") > strings.Index(body, "connection refused") {
+		t.Fatal("history must show newest events first")
+	}
+}

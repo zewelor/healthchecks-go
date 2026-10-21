@@ -33,6 +33,22 @@ type dashboardTimestamp struct {
 }
 
 var dashboardTemplate = template.Must(template.New("dashboard").Funcs(template.FuncMap{
+	"eventLabel": func(kind string) string {
+		switch kind {
+		case "success":
+			return "Succeeded"
+		case "fail":
+			return "Failed"
+		case "start":
+			return "Started"
+		case "log":
+			return "Log received"
+		case "ignored":
+			return "Ignored while paused"
+		default:
+			return kind
+		}
+	},
 	"formatTime":   formatDashboardTime,
 	"relativeTime": formatDashboardRelativeTime,
 	"dueTime":      formatDashboardDueTime,
@@ -97,6 +113,7 @@ const dashboardHTML = `<!doctype html>
     .notice.error { border-color: var(--error-border); background: var(--error-bg); color: var(--error-text); }
     .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: 2rem 0 .9rem; }
     .section-heading h2 { margin: 0; font-size: 1.15rem; }
+    .section-heading p { margin: 0; font-size: .8rem; }
     .muted { color: var(--muted); }
     .check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .9rem; }
     .check-card { min-width: 0; padding: 1.1rem; }
@@ -104,6 +121,10 @@ const dashboardHTML = `<!doctype html>
     .check-name { margin: 0; font-size: .95rem; line-height: 1.3; overflow-wrap: anywhere; }
     .check-link { color: var(--text); }
     .check-link:hover { color: var(--text); }
+    .description-tooltip, [data-full]::after { visibility: hidden; z-index: 3; box-sizing: border-box; width: max-content; padding: .65rem .85rem; border: 1px solid var(--border-strong); border-radius: .6rem; background: var(--border); color: var(--secondary); box-shadow: 0 6px 20px rgb(0 0 0 / .12); font-size: .85rem; font-weight: 400; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; transition: visibility 0s; }
+    .description-tooltip { position: fixed; top: var(--tooltip-top); left: var(--tooltip-left); max-width: min(24rem, calc(100vw - 2rem)); max-height: 50vh; overflow: auto; transition-delay: .12s; }
+    .check-name:hover .description-tooltip:not([data-dismissed]), .check-name:focus-within .description-tooltip:not([data-dismissed]), [data-full]:hover:not([data-dismissed])::after, [data-full]:focus:not([data-dismissed])::after { visibility: visible; transition-delay: .3s; }
+    .check-description { max-width: 70ch; margin: .8rem 0 0; color: var(--muted); font-size: .95rem; white-space: pre-wrap; overflow-wrap: anywhere; }
     .badge { display: inline-flex; align-items: center; gap: .42rem; flex: 0 0 auto; padding: .25rem .58rem; border: 1px solid currentColor; border-radius: 999px; font-size: .65rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
     .badge::before { width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; content: ""; }
     .status-up { color: var(--up); }
@@ -123,25 +144,34 @@ const dashboardHTML = `<!doctype html>
     .dependencies { grid-column: 1 / -1; border-top: 1px solid var(--border); padding-top: 1rem; }
     .detail-fact strong { display: block; color: var(--muted); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; }
     .detail-fact span { display: block; margin-top: .25rem; overflow-wrap: anywhere; }
-    .event-list { display: grid; gap: .7rem; }
-    .event { min-width: 0; padding: .8rem 0; border-bottom: 1px solid var(--border); }
-    .event-top { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; }
-    .event-kind { color: var(--text); font-weight: 750; text-transform: capitalize; }
-    .event-time, .event-meta { color: var(--muted); font-size: .82rem; font-variant-numeric: tabular-nums; }
-    .event-meta { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .55rem; }
+    .event-list { margin: 0; padding: .25rem 1.25rem; list-style: none; }
+    .event { color: var(--secondary); position: relative; min-width: 0; padding: 1rem 0 1rem 1.65rem; }
+    .event:not(:last-child)::after { content: ""; position: absolute; left: 6px; top: calc(1.45rem + 13px); bottom: -1.45rem; width: 1px; background: var(--border); }
+    .event::before { content: ""; position: absolute; box-sizing: border-box; left: 0; top: 1.45rem; width: 13px; height: 13px; border: 2px solid currentColor; border-radius: 50%; background: var(--surface); }
+    .event.success::before { border-color: var(--up); background: var(--up); }
+    .event.fail::before { border-color: var(--down); background: var(--down); }
+    .event-top { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem 1rem; }
+    .event-top > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; }
+    .event-top strong { color: var(--text); font-weight: 650; font-size: .9rem; }
+    .event-top span, .event-top time, .event-meta { color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+    .event-top > time { flex-shrink: 0; text-align: right; }
+    .event-meta { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .4rem; overflow-wrap: anywhere; }
+    .event details { margin-top: .4rem; color: var(--text); }
+    .event summary { font-size: .8rem; font-weight: 400; color: var(--muted); }
+    @media (max-width: 600px) { .event { padding-left: 1.2rem; } .event-top { flex-wrap: wrap; } .event-top > time { text-align: left; } }
     details { margin-top: .7rem; }
     summary { width: fit-content; color: var(--text); cursor: pointer; font-size: .85rem; font-weight: 700; }
     pre { max-height: 24rem; overflow: auto; margin: .65rem 0 0; padding: .8rem; border: 1px solid var(--border); border-radius: .6rem; background: var(--bg); color: var(--secondary); white-space: pre-wrap; overflow-wrap: anywhere; font: .82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .empty { padding: 1.2rem; border: 1px dashed var(--border-strong); border-radius: .8rem; color: var(--muted); }
     @media (max-width: 900px) { .check-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-    @media (max-width: 600px) { .shell { width: min(100% - 1.1rem, 1240px); padding-top: 1.35rem; } .topline { gap: .75rem; flex-wrap: wrap; } .detail-status { align-items: flex-end; flex-direction: column; flex-shrink: 0; } .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; } .summary-bar { gap: .75rem; margin: 1rem 0; } .metric { padding: .55rem .7rem; } .metric-label { font-size: .68rem; } .metric-value { font-size: 1.25rem; } .check-grid, .detail-grid { grid-template-columns: minmax(0, 1fr); } .section-heading { align-items: flex-start; flex-direction: column; } .panel { padding: 1rem; } }
+    @media (max-width: 600px) { .shell { width: min(100% - 1.1rem, 1240px); padding-top: 1.35rem; } .topline { gap: .75rem; flex-wrap: wrap; } .detail-status { width: 100%; align-items: center; justify-content: space-between; flex-shrink: 0; } .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; } .summary-bar { gap: .75rem; margin: 1rem 0; } .metric { padding: .55rem .7rem; } .metric-label { font-size: .68rem; } .metric-value { font-size: 1.25rem; } .check-grid { grid-template-columns: minmax(0, 1fr); } .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; } .section-heading { align-items: flex-start; flex-direction: column; } .panel { padding: 1rem; } }
     @media (prefers-reduced-motion: no-preference) { a, summary { transition: color .15s ease; } }
     select { padding: .55rem .5rem; border: 1px solid var(--border-strong); border-radius: .6rem; background: var(--surface); color: var(--text); font: inherit; }
     select option { background: var(--surface); color: var(--text); }
     select:focus-visible, time:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
     time[data-full] { position: relative; cursor: help; }
-    time[data-full]:hover::after, time[data-full]:focus::after { content: attr(data-full); position: absolute; z-index: 2; bottom: calc(100% + .4rem); left: 0; box-sizing: border-box; width: max-content; max-width: min(18rem, var(--tooltip-max-width, calc(100vw - 2rem))); padding: .4rem .6rem; border: 1px solid var(--border-strong); border-radius: .4rem; background: var(--surface); color: var(--text); box-shadow: 0 4px 12px rgb(0 0 0 / .15); font-size: .78rem; pointer-events: none; }
-    time[data-positioned]:hover::after, time[data-positioned]:focus::after { position: fixed; top: var(--tooltip-top); left: var(--tooltip-left); bottom: auto; }
+    [data-full]::after { content: attr(data-full); position: absolute; bottom: calc(100% + .4rem); left: 0; max-width: min(18rem, var(--tooltip-max-width, calc(100vw - 2rem))); pointer-events: none; }
+    [data-positioned]::after { position: fixed; top: var(--tooltip-top); left: var(--tooltip-left); bottom: auto; }
     .toolbar { position: relative; display: flex; flex-direction: column; align-items: flex-start; align-self: stretch; gap: .15rem; flex-shrink: 0; padding: .65rem .8rem; }
     .sort-control { display: grid; place-items: center; width: 32px; height: 28px; margin: -6px -8px; padding: 0; border: 0; border-radius: .35rem; background: transparent; color: var(--text); cursor: pointer; }
     .sort-control:hover { background: var(--border); }
@@ -177,7 +207,7 @@ const dashboardHTML = `<!doctype html>
     {{else if .HasCurrent}}
       <a class="back" href="/">← All checks</a>
       <header class="topline">
-        <div><h1>{{.Current.Name}}</h1></div>
+        <div><h1>{{.Current.Name}}</h1>{{if .Current.Description}}<p class="check-description">{{.Current.Description}}</p>{{end}}</div>
         <div class="detail-status">{{template "themeControl"}}<span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
       </header>
       <main id="main">
@@ -198,22 +228,22 @@ const dashboardHTML = `<!doctype html>
           {{if .Current.DeliveryError}}<div class="notice error" role="status"><strong>Delivery to {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}webhook{{end}} failed:</strong> {{.Current.DeliveryError}}</div>{{else if .Current.Notify}}<p class="notice">Notifications use {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}the configured webhook{{end}}.</p>{{end}}
         </section>
         <section aria-labelledby="events-heading">
-          <div class="section-heading"><h2 id="events-heading">Recent events</h2></div>
+          <div class="section-heading"><h2 id="events-heading">Event history</h2><p class="muted">Recent pings: {{len .Current.Events}} · newest first · cleared on restart</p></div>
           {{if .Current.Events}}
-            <div class="event-list">
+            <ol class="event-list panel">
               {{range .Current.Events}}
-                <article class="event">
-                  <div class="event-top"><span class="event-kind">{{.Kind}}</span><span class="event-time">{{template "timestamp" (timestamp .Time $.Now)}}</span></div>
-                  <div class="event-meta">
-                    {{if .RID}}<span>RID: {{.RID}}</span>{{end}}
-                    {{if .ExitCode}}<span>Exit code: {{.ExitCode}}</span>{{end}}
-                    {{if .Duration}}<span>Duration: {{formatDuration .Duration}}</span>{{end}}
-                    {{if .Truncated}}<span>Log was truncated</span>{{end}}
+                <li class="event {{.Kind}}">
+                  <div class="event-top">
+                    <div><strong>{{eventLabel .Kind}}</strong>{{if .Duration}}<span>Duration: {{formatDuration .Duration}}</span>{{end}}{{if .ExitCode}}<span>Exit code: {{.ExitCode}}</span>{{end}}</div>
+                    {{template "timestamp" (timestamp .Time $.Now)}}
                   </div>
-                  {{if .Body}}<details><summary>Log details</summary><pre>{{.Body}}</pre></details>{{end}}
-                </article>
+                  {{if or .Body .RID .Truncated}}<details><summary>{{if .Body}}Log details{{else}}Run details{{end}}</summary>
+                    {{if or .RID .Truncated}}<div class="event-meta">{{if .RID}}<span>RID: {{.RID}}</span>{{end}}{{if .Truncated}}<span>Log was truncated</span>{{end}}</div>{{end}}
+                    {{if .Body}}<pre>{{.Body}}</pre>{{end}}
+                  </details>{{end}}
+                </li>
               {{end}}
-            </div>
+            </ol>
           {{else}}<p class="empty">No events have been received for this check.</p>{{end}}
         </section>
 
@@ -233,7 +263,7 @@ const dashboardHTML = `<!doctype html>
           <button class="metric" type="button" data-filter="awaiting" aria-pressed="false"><span class="metric-label">Awaiting</span><span class="metric-value">{{.Awaiting}}</span></button>
           <button class="metric" type="button" data-filter="paused" aria-pressed="false"><span class="metric-label">Paused</span><span class="metric-value">{{.Paused}}</span></button>
         </section>
-        <div class="toolbar"><button class="sort-control" id="sort-direction" type="button" data-direction="asc" aria-label="Sort descending" title="Sort descending"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sort-down" d="M8 4v16m-4-4 4 4 4-4"/><path class="sort-up" d="M16 20V4m-4 4 4-4 4 4"/></svg></button><select id="sort-select" aria-label="Sort by"><option value="state">State</option><option value="name">Name</option><option value="due">Next due</option></select><svg class="sort-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
+        <div class="toolbar"><button class="sort-control" id="sort-direction" type="button" data-direction="asc" aria-label="Sort descending" data-full="Sort descending"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sort-down" d="M8 4v16m-4-4 4 4 4-4"/><path class="sort-up" d="M16 20V4m-4 4 4-4 4 4"/></svg></button><select id="sort-select" aria-label="Sort by"><option value="state">State</option><option value="name">Name</option><option value="due">Next due</option></select><svg class="sort-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
         </div>
         {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
@@ -241,7 +271,7 @@ const dashboardHTML = `<!doctype html>
           <section class="check-grid" aria-label="Configured checks">
             {{range .Checks}}
               <article class="check-card status-{{statusClass .Status}}" data-status="{{.Status}}" data-name="{{.Name}}" data-due="{{if ne .Status "paused"}}{{timeAttr .NextDue}}{{end}}">
-                <div class="card-top"><h2 class="check-name"><a class="check-link" href="/checks/{{.Key}}">{{.Name}}</a></h2><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
+                <div class="card-top"><h2 class="check-name"><a class="check-link" href="/checks/{{.Key}}"{{if .Description}} aria-describedby="description-{{.Key}}"{{end}}>{{.Name}}</a>{{if .Description}}<span class="description-tooltip" id="description-{{.Key}}" role="tooltip">{{.Description}}</span>{{end}}</h2><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
                 <dl class="facts">
                   <div><dt>Last success</dt><dd>{{template "timestamp" (timestamp .LastSuccess $.Now)}}</dd></div>
                   <div><dt>Next due</dt><dd>{{template "timestamp" (dueTimestamp .NextDue $.Now .Status)}}</dd></div>
@@ -262,9 +292,9 @@ const dashboardHTML = `<!doctype html>
 </html>
 {{define "timestamp"}}{{if .Value.IsZero}}—{{else}}<time tabindex="0" datetime="{{timeAttr .Value}}" data-full="{{formatTime .Value}}" aria-label="{{formatTime .Value}}"{{if .Due}} data-due="true"{{end}}>{{if .Due}}{{dueTime .Value .Now}}{{else}}{{relativeTime .Value .Now}}{{end}}</time>{{end}}{{end}}
 {{define "themeControl"}}<div class="theme-switch" role="group" aria-label="Theme" data-choice="system">
-  <button type="button" data-theme-choice="system" aria-label="System theme" title="System theme" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
-  <button type="button" data-theme-choice="light" aria-label="Light theme" title="Light theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
-  <button type="button" data-theme-choice="dark" aria-label="Dark theme" title="Dark theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg></button>
+  <button type="button" data-theme-choice="system" aria-label="System theme" data-full="System theme" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
+  <button type="button" data-theme-choice="light" aria-label="Light theme" data-full="Light theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+  <button type="button" data-theme-choice="dark" aria-label="Dark theme" data-full="Dark theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg></button>
 </div>{{end}}`
 
 const dashboardThemeScript = `(() => {
@@ -327,7 +357,7 @@ const dashboardRefreshScript = `(() => {
       directionButton.dataset.direction = direction === 1 ? "asc" : "desc";
       const action = direction === 1 ? "Sort descending" : "Sort ascending";
       directionButton.setAttribute("aria-label", action);
-      directionButton.title = action;
+      directionButton.dataset.full = action;
       cards.forEach(card => { card.hidden = status !== "all" && card.dataset.status !== status; grid.append(card); });
       filters.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.filter === status)));
       document.getElementById("filter-empty").hidden = cards.some(card => !card.hidden);
@@ -369,25 +399,36 @@ const dashboardRefreshScript = `(() => {
     const rect = element.getBoundingClientRect();
     const viewport = document.documentElement;
     element.style.setProperty("--tooltip-max-width", viewport.clientWidth - 32 + "px");
-    const style = getComputedStyle(element, "::after");
+    const tooltip = element.matches(".check-link") ? document.getElementById(element.getAttribute("aria-describedby")) : element;
+    const style = getComputedStyle(tooltip, tooltip === element ? "::after" : null);
     const width = parseFloat(style.width);
     const height = parseFloat(style.height);
     const left = Math.max(16, Math.min(rect.left, viewport.clientWidth - width - 16));
     const above = rect.top - height - 6;
     const top = Math.max(16, Math.min(above >= 16 ? above : rect.bottom + 6, viewport.clientHeight - height - 16));
-    element.style.setProperty("--tooltip-left", left + "px");
-    element.style.setProperty("--tooltip-top", top + "px");
-    element.dataset.positioned = "true";
+    tooltip.style.setProperty("--tooltip-left", left + "px");
+    tooltip.style.setProperty("--tooltip-top", top + "px");
+    tooltip.dataset.positioned = "true";
   };
-  document.querySelectorAll("time[data-full]").forEach(element => {
+  document.querySelectorAll("[data-full], .check-link[aria-describedby]").forEach(element => {
     element.addEventListener("mouseenter", () => positionTooltip(element));
     element.addEventListener("focus", () => positionTooltip(element));
   });
-  const positionVisibleTooltips = () => document.querySelectorAll("time[data-full]:hover, time[data-full]:focus").forEach(positionTooltip);
+  document.querySelectorAll("[data-full], .description-tooltip").forEach(tooltip => {
+    const trigger = tooltip.matches(".description-tooltip") ? tooltip.parentElement : tooltip;
+    trigger.addEventListener("mouseleave", () => { if (!trigger.contains(document.activeElement)) delete tooltip.dataset.dismissed; });
+    trigger.addEventListener("focusout", () => { if (!trigger.matches(":hover")) delete tooltip.dataset.dismissed; });
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") document.querySelectorAll("[data-full]:hover, [data-full]:focus, .check-name:hover .description-tooltip, .check-name:focus-within .description-tooltip").forEach(tooltip => { tooltip.dataset.dismissed = "true"; });
+  });
+  const positionVisibleTooltips = () => document.querySelectorAll("[data-full]:hover, [data-full]:focus, .check-link[aria-describedby]:hover, .check-link[aria-describedby]:focus").forEach(positionTooltip);
   window.addEventListener("resize", positionVisibleTooltips);
   window.addEventListener("scroll", positionVisibleTooltips, true);
   window.setInterval(updateTimes, 1000);
-  window.setTimeout(() => window.location.reload(), 15000);
+  window.setInterval(() => {
+    if (!document.querySelector("details[open]")) window.location.reload();
+  }, 15000);
 })();`
 
 func renderDashboard(w http.ResponseWriter, r *http.Request, e *Engine) {

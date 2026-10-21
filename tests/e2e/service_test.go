@@ -144,6 +144,7 @@ webhook:
 checks:
   - uuid: %s
     name: Backup
+    description: "Nightly <database> snapshot & verification"
     every: 5m
     grace: 1m
     depends_on_regions: [region-b, region-a]
@@ -213,9 +214,14 @@ checks:
 	if status != 200 || !strings.Contains(detail, "truncated") {
 		t.Fatal("missing bounded log detail")
 	}
+	if !strings.Contains(detail, "Nightly &lt;database&gt; snapshot &amp; verification") {
+		t.Fatal("missing escaped check description")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")
-	if err := os.WriteFile(path, []byte(strings.Replace(config, "name: Backup", "name: Renamed backup", 1)), 0600); err != nil {
+	updated := strings.Replace(config, "name: Backup", "name: Renamed backup", 1)
+	updated = strings.Replace(updated, "Nightly <database> snapshot & verification", "Updated backup instructions", 1)
+	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
 		t.Fatal(err)
 	}
 	watcher := healthchecks.NewConfigWatcher(path, e, os.LookupEnv)
@@ -232,7 +238,7 @@ checks:
 		t.Fatal("invalid reload accepted")
 	}
 	_, index := call("GET", "/", "", "")
-	if !strings.Contains(index, "reload") || !strings.Contains(index, "Renamed backup") {
+	if !strings.Contains(index, "reload") || !strings.Contains(index, "Renamed backup") || !strings.Contains(index, "Updated backup instructions") {
 		t.Fatal("reload error/active definition not rendered")
 	}
 	call("POST", "/ping/"+uuid, "<script>alert('test')</script>", "")

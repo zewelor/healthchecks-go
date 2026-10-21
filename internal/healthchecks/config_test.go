@@ -71,6 +71,8 @@ func TestSiteNameFromEnvironment(t *testing.T) {
 func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 	for name, input := range map[string]string{
 		"null boolean":           strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    notify: null", 1),
+		"numeric description":    strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    description: 123", 1),
+		"null description":       strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    description: null", 1),
 		"numeric name":           strings.Replace(simpleConfig, "name: Heartbeat", "name: 123", 1),
 		"unknown field":          strings.Replace(simpleConfig, "every: 5m", "period: 5m", 1),
 		"site name in YAML":      strings.Replace(simpleConfig, "public_url:", "site_name: YAML name\npublic_url:", 1),
