@@ -182,8 +182,19 @@ assert(document.querySelector('.check-card') === window.card, 'status change did
 assert(document.activeElement === window.link, 'live reorder lost keyboard focus');
 assert(document.getSelection().toString() === 'Backup', 'live reorder lost text selection');
 `)
-	browser("", "open", server.URL+"/checks/"+key)
+	browser("", "set", "viewport", "390", "844")
 	eval(`
+window.card.scrollIntoView();
+const bounds = window.card.getBoundingClientRect();
+const target = document.elementFromPoint(bounds.right - 10, bounds.bottom - 10);
+assert(target.closest('a') === window.link, 'mobile card padding does not link to details');
+`)
+	browser("", "click", `.check-card[data-name="Backup"]`)
+	eval(`assert(location.pathname === '/checks/` + key + `', 'mobile card tap did not open details')`)
+	browser("", "set", "viewport", "1280", "720")
+	eval(`
+assert(!document.querySelector('.theme-switch'), 'detail page shows theme controls');
+assert(document.documentElement.dataset.theme === 'dark', 'detail page lost the saved theme');
 window.originalDocument = window.documentIdentity;
 window.log = [...document.querySelectorAll('details')].find(node => node.textContent.includes('original log'));
 window.log.open = true;
@@ -272,10 +283,14 @@ assert(document.querySelector('#refresh-error').hidden, 'valid missing-check res
 	refresh(`
 assert(document.querySelector('h1').textContent === 'Backup', 'restored check did not reappear');
 assert(document.querySelector('.detail-status .badge'), 'restored detail status is missing');
-document.querySelector('[data-theme-choice="light"]').click();
-assert(document.documentElement.dataset.theme === 'light', 'restored theme controls stopped working');
+assert(!document.querySelector('.theme-switch'), 'restored detail page shows theme controls');
+assert(document.documentElement.dataset.theme === 'dark', 'restored detail page lost the saved theme');
 `)
 	browser("", "open", server.URL)
+	eval(`
+document.querySelector('[data-theme-choice="light"]').click();
+assert(document.documentElement.dataset.theme === 'light', 'overview theme controls stopped working');
+`)
 	if err := e.Reload(parse(queueOnly)); err != nil {
 		t.Fatal(err)
 	}

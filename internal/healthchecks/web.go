@@ -122,6 +122,11 @@ const dashboardHTML = `<!doctype html>
     .check-name { margin: 0; font-size: .95rem; line-height: 1.3; overflow-wrap: anywhere; }
     .check-link { color: var(--text); }
     .check-link:hover { color: var(--text); }
+    @media (max-width: 600px) {
+      .check-card { position: relative; }
+      .check-link::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 1rem; }
+      .check-card:has(.check-link:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+    }
     .description-tooltip, [data-full]::after { visibility: hidden; z-index: 3; box-sizing: border-box; width: max-content; padding: .65rem .85rem; border: 1px solid var(--border-strong); border-radius: .6rem; background: var(--border); color: var(--secondary); box-shadow: 0 6px 20px rgb(0 0 0 / .12); font-size: .85rem; font-weight: 400; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; transition: visibility 0s; }
     .description-tooltip { position: fixed; top: var(--tooltip-top); left: var(--tooltip-left); max-width: min(24rem, calc(100vw - 2rem)); max-height: 50vh; overflow: auto; transition-delay: .12s; }
     .check-name:hover .description-tooltip:not([data-dismissed]), .check-name:focus-within .description-tooltip:not([data-dismissed]), [data-full]:hover:not([data-dismissed])::after, [data-full]:focus:not([data-dismissed])::after { visibility: visible; transition-delay: .3s; }
@@ -210,7 +215,7 @@ const dashboardHTML = `<!doctype html>
       <a class="back" href="/">← All checks</a>
       <header class="topline">
         <div><h1>{{.Current.Name}}</h1>{{if .Current.Description}}<p class="check-description">{{.Current.Description}}</p>{{end}}</div>
-        <div class="detail-status" id="detail-status">{{template "themeControl"}}<span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
+        <div class="detail-status" id="detail-status"><span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
       </header>
       <main id="main">
         {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
@@ -320,8 +325,10 @@ const dashboardRefreshScript = `(() => {
   };
   const selectTheme = (theme = document.documentElement.dataset.theme || "system") => {
     const themeSwitch = document.querySelector(".theme-switch");
-    themeSwitch.dataset.choice = theme;
-    themeSwitch.querySelectorAll("button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme)));
+    if (themeSwitch) {
+      themeSwitch.dataset.choice = theme;
+      themeSwitch.querySelectorAll("button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme)));
+    }
     if (theme === "system") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
   };
@@ -478,7 +485,7 @@ const dashboardRefreshScript = `(() => {
       if ((!response.ok && response.status !== 404) || !response.headers.get("Content-Type")?.startsWith("text/html")) throw new Error("Unexpected dashboard response: " + response.status);
       const next = new DOMParser().parseFromString(await response.text(), "text/html");
       const dashboard = next.getElementById("dashboard");
-      if (!dashboard || !next.getElementById("main") || !next.querySelector(".theme-switch")) throw new Error("Dashboard markup is missing");
+      if (!dashboard || !next.getElementById("main")) throw new Error("Dashboard markup is missing");
       // Sort/filter the detached document first to avoid moving focused cards
       // back to server order before restoring the user's preferred order.
       updateChecks(next);

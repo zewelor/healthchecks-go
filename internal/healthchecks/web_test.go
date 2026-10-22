@@ -101,6 +101,9 @@ func TestDashboardDetailShowsScheduleDependenciesWebhookAndEscapedEvents(t *test
 	if strings.Contains(body, "<strong>Region</strong>") {
 		t.Fatal("detail page shows removed region field")
 	}
+	if strings.Contains(body, `aria-label="Theme"`) {
+		t.Fatal("detail page shows theme controls")
+	}
 	if strings.Contains(body, `<script>alert`) || !strings.Contains(body, `&lt;script&gt;`) {
 		t.Fatal("event log body was not HTML escaped")
 	}
