@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .NotFound}}Check not found · {{else if .HasCurrent}}{{.Current.Name}} · {{end}}{{.Info.SiteName}}</title>
+  <script>{{.ThemeScript}}</script>
+  <style>{{.Style}}</style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="shell" id="dashboard">
+    {{if .NotFound}}
+      <header class="topline">
+        <div><h1>Check not found</h1></div>
+        {{template "themeControl"}}
+      </header>
+      <main id="main">
+        <p class="muted">This page does not match a configured check.</p>
+        <a class="back" href="/">← All checks</a>
+      </main>
+    {{else if .HasCurrent}}
+      <a class="back" href="/">← All checks</a>
+      <header class="topline">
+        <div><h1>{{.Current.Name}}</h1>{{if .Current.Description}}<p class="check-description">{{.Current.Description}}</p>{{end}}</div>
+        <div class="detail-status" id="detail-status"><span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
+      </header>
+      <main id="main">
+        {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
+        {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
+        <section id="check-details" class="panel detail-panel" aria-label="Check details">
+          {{if .Current.Reason}}<p class="reason">{{.Current.Reason}}</p>{{end}}
+          <div class="detail-grid">
+            <div class="detail-fact"><strong>Schedule</strong><span>{{.Current.Schedule}}</span></div>
+            <div class="detail-fact"><strong>Running</strong><span>{{if .Current.Started.IsZero}}No{{else}}Yes · started {{template "timestamp" (timestamp .Current.Started $.Now)}}{{end}}</span></div>
+            <div class="detail-fact"><strong>Last success</strong><span>{{template "timestamp" (timestamp .Current.LastSuccess $.Now)}}</span></div>
+            <div class="detail-fact"><strong>Last ping</strong><span>{{template "timestamp" (timestamp .Current.LastPing $.Now)}}</span></div>
+            <div class="detail-fact"><strong>Next due</strong><span>{{template "timestamp" (dueTimestamp .Current.NextDue $.Now .Current.Status)}}</span></div>
+            <div class="detail-fact"><strong>Deadline</strong><span>{{template "timestamp" (dueTimestamp .Current.Deadline $.Now .Current.Status)}}</span></div>
+            {{if .Current.Duration}}<div class="detail-fact"><strong>Last run duration</strong><span>{{formatDuration .Current.Duration}}</span></div>{{end}}
+            {{if .Current.DependsOnRegions}}<div class="detail-fact dependencies"><strong>Depends on regions</strong><span>{{range $i, $region := .Current.DependsOnRegions}}{{if $i}}, {{end}}{{$region}}{{end}}</span></div>{{end}}
+          </div>
+          {{if .Current.DeliveryError}}<div class="notice error" role="status"><strong>Delivery to {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}webhook{{end}} failed:</strong> {{.Current.DeliveryError}}</div>{{else if .Current.Notify}}<p class="notice">Notifications use {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}the configured webhook{{end}}.</p>{{end}}
+        </section>
+        <section id="events" aria-labelledby="events-heading">
+          <div class="section-heading"><h2 id="events-heading">Event history</h2><p class="muted">Recent pings: {{len .Current.Events}} · newest first · cleared on restart</p></div>
+          {{if .Current.Events}}
+            <ol class="event-list panel">
+              {{range .Current.Events}}
+                <li class="event {{.Kind}}" id="event-{{.ID}}">
+                  <div class="event-top">
+                    <div><strong>{{eventLabel .Kind}}</strong>{{if .Duration}}<span>Duration: {{formatDuration .Duration}}</span>{{end}}{{if .ExitCode}}<span>Exit code: {{.ExitCode}}</span>{{end}}</div>
+                    {{template "timestamp" (timestamp .Time $.Now)}}
+                  </div>
+                  {{if or .Body .RID .Truncated}}<details><summary>{{if .Body}}Log details{{else}}Run details{{end}}</summary>
+                    {{if or .RID .Truncated}}<div class="event-meta">{{if .RID}}<span>RID: {{.RID}}</span>{{end}}{{if .Truncated}}<span>Log was truncated</span>{{end}}</div>{{end}}
+                    {{if .Body}}<pre>{{.Body}}</pre>{{end}}
+                  </details>{{end}}
+                </li>
+              {{end}}
+            </ol>
+          {{else}}<p class="empty">No events have been received for this check.</p>{{end}}
+        </section>
+
+      </main>
+    {{else}}
+      <header class="topline">
+        <div><h1>{{.Info.SiteName}}</h1></div>
+        {{template "themeControl"}}
+      </header>
+      <main id="main">
+        <div class="summary-bar" id="summary-bar">
+        <section class="summary-grid" aria-label="Filter checks by status">
+          <button class="metric" type="button" data-filter="all" aria-pressed="true"><span class="metric-label">Checks</span><span class="metric-value">{{.Total}}</span></button>
+          <button class="metric" type="button" data-filter="up" aria-pressed="false"><span class="metric-label">Up</span><span class="metric-value status-up">{{.Up}}</span></button>
+          <button class="metric" type="button" data-filter="down" aria-pressed="false"><span class="metric-label">Down</span><span class="metric-value status-down">{{.Down}}</span></button>
+          <button class="metric" type="button" data-filter="grace" aria-pressed="false"><span class="metric-label">In grace</span><span class="metric-value status-grace">{{.Grace}}</span></button>
+          <button class="metric" type="button" data-filter="awaiting" aria-pressed="false"><span class="metric-label">Awaiting</span><span class="metric-value">{{.Awaiting}}</span></button>
+          <button class="metric" type="button" data-filter="paused" aria-pressed="false"><span class="metric-label">Paused</span><span class="metric-value">{{.Paused}}</span></button>
+        </section>
+        <div class="toolbar"><button class="sort-control" id="sort-direction" type="button" data-direction="asc" aria-label="Sort descending" data-full="Sort descending"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="sort-down" d="M8 4v16m-4-4 4 4 4-4"/><path class="sort-up" d="M16 20V4m-4 4 4-4 4 4"/></svg></button><select id="sort-select" aria-label="Sort by"><option value="state">State</option><option value="name">Name</option><option value="due">Next due</option></select><svg class="sort-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></div>
+        </div>
+        {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
+        {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
+        {{if .Checks}}
+          <section class="check-grid" id="check-grid" aria-label="Configured checks">
+            {{range .Checks}}
+              <article class="check-card status-{{statusClass .Status}}" id="check-{{.Key}}" data-status="{{.Status}}" data-name="{{.Name}}" data-due="{{if ne .Status "paused"}}{{timeAttr .NextDue}}{{end}}">
+                <div class="card-top"><h2 class="check-name"><a class="check-link" href="/checks/{{.Key}}"{{if .Description}} aria-describedby="description-{{.Key}}"{{end}}>{{.Name}}</a>{{if .Description}}<span class="description-tooltip" id="description-{{.Key}}" role="tooltip">{{.Description}}</span>{{end}}</h2><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
+                <dl class="facts">
+                  <div><dt>Last success</dt><dd>{{template "timestamp" (timestamp .LastSuccess $.Now)}}</dd></div>
+                  <div><dt>Next due</dt><dd>{{template "timestamp" (dueTimestamp .NextDue $.Now .Status)}}</dd></div>
+                </dl>
+                {{if not .Started.IsZero}}<p class="reason">Running since {{template "timestamp" (timestamp .Started $.Now)}}</p>{{end}}
+                {{if .Reason}}<p class="reason">{{.Reason}}</p>{{end}}
+              </article>
+            {{end}}
+          </section>
+          <p id="filter-empty" class="empty" role="status" hidden>No checks match this status.</p>
+        {{else}}<p class="empty">No checks are configured.</p>{{end}}
+
+      </main>
+    {{end}}
+  </div>
+  <script>{{.Script}}</script>
+</body>
+</html>
+{{define "timestamp"}}{{if .Value.IsZero}}—{{else}}<time tabindex="0" datetime="{{timeAttr .Value}}" data-full="{{formatTime .Value}}" aria-label="{{formatTime .Value}}"{{if .Due}} data-due="true"{{end}}>{{if .Due}}{{dueTime .Value .Now}}{{else}}{{relativeTime .Value .Now}}{{end}}</time>{{end}}{{end}}
+{{define "themeControl"}}<div class="theme-switch" id="theme-switch" role="group" aria-label="Theme" data-choice="system">
+  <button type="button" data-theme-choice="system" aria-label="System theme" data-full="System theme" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
+  <button type="button" data-theme-choice="light" aria-label="Light theme" data-full="Light theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+  <button type="button" data-theme-choice="dark" aria-label="Dark theme" data-full="Dark theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg></button>
+</div>{{end}}

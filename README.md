@@ -50,8 +50,8 @@ Optional fields: `description` (plain text), `timezone`, `paused`, `notify`, and
 Set `public_url` to the service's HTTP(S) origin. YAML changes reload automatically.
 
 Set `HC_SITE_NAME` to customize the dashboard title. Theme, filter, and sort preferences are saved in the browser.
-The dashboard updates in place every 15 seconds, keeping expanded logs and your current view.
-If updates fail, it keeps the last view, shows a warning, and retries automatically.
+Reload the page manually to see updated check statuses and recent pings.
+Relative timestamps continue counting locally; the dashboard does not fetch updates in the background.
 Set `HC_LOG_LEVEL` to `debug`, `info` (default), `warn`, or `error` to filter application logs.
 For cron syntax, webhooks, and other details, see the [reference](docs/reference.md).
 

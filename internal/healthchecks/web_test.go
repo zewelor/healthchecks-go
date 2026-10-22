@@ -152,7 +152,7 @@ func TestDashboardUsesStaticHashedScripts(t *testing.T) {
 	e := dashboardEngine(t)
 	key := e.Snapshot()[0].Key
 	paths := []string{"/", "/checks/" + key}
-	hash := sha256.Sum256([]byte(dashboardRefreshScript))
+	hash := sha256.Sum256([]byte(dashboardScript))
 	policy := "script-src 'sha256-" + base64.StdEncoding.EncodeToString(hash[:]) + "'"
 	themeHash := sha256.Sum256([]byte(dashboardThemeScript))
 	themePolicy := "'sha256-" + base64.StdEncoding.EncodeToString(themeHash[:]) + "'"
@@ -163,8 +163,8 @@ func TestDashboardUsesStaticHashedScripts(t *testing.T) {
 		}
 		body := w.Body.String()
 
-		if !strings.Contains(body, "<script>"+dashboardRefreshScript+"</script>") || strings.Contains(body, `http-equiv="refresh"`) {
-			t.Errorf("GET %q did not render the static controllable refresh script", path)
+		if !strings.Contains(body, "<script>"+dashboardScript+"</script>") || strings.Contains(body, `http-equiv="refresh"`) {
+			t.Errorf("GET %q did not render the static dashboard script", path)
 		}
 		csp := w.Header().Get("Content-Security-Policy")
 		if !strings.Contains(csp, policy) || !strings.Contains(csp, themePolicy) || strings.Contains(csp, "script-src 'unsafe-inline'") {

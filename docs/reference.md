@@ -66,7 +66,7 @@ Use `rid=<uuid>` to correlate start and completion; run IDs must be lowercase ca
 Limits: 128 checks, 20 recent events per check, and 8192 bytes per body (`Ping-Body-Limit`). Longer bodies are truncated.
 The check detail page shows these recent pings newest first, with execution duration and expandable logs/run IDs.
 This is an in-memory ping history, cleared on restart; it does not record deadline transitions or webhook deliveries.
-The page updates in place every 15 seconds, preserving expanded logs and run details.
+Reload the page manually to see new pings and updated statuses; no updates are fetched in the background.
 
 Grace applies both to missed successes and unfinished executions. Explicit failures act immediately.
 Paused checks ignore pings for state changes; unpausing starts a new observation period.
@@ -103,13 +103,14 @@ Kubernetes ConfigMap mounts must not use `subPath`.
 The browser regression test requires `agent-browser` with Chromium installed:
 
 ```sh
-HC_TEST_BROWSER=1 go test ./tests/e2e -run TestDashboardPartialRefreshBrowser -v
+HC_TEST_BROWSER=1 go test ./tests/e2e -run TestDashboardManualRefreshBrowser -v
 ```
 
-It exercises the real HTTP handler and Content Security Policy, driving the
-15-second refresh timer manually. It covers live status and history updates,
-preserved controls and expanded logs, failed updates, recovery, and configuration
-changes. The default Go suite skips this opt-in browser test.
+It exercises the real HTTP handler and Content Security Policy, driving interval
+callbacks manually. It verifies that statuses and history change only after a manual
+reload, with no background requests, and covers saved preferences, tooltips, mobile
+card navigation, escaped logs, and configuration changes. The default Go suite skips
+this opt-in browser test.
 
 PostgreSQL integration tests require a disposable local database named `hc_test`; they reset application data:
 
