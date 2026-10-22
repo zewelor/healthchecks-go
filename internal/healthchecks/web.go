@@ -111,6 +111,7 @@ const dashboardHTML = `<!doctype html>
     .notice { margin: 1rem 0; padding: .9rem 1rem; border: 1px solid var(--border-strong); border-radius: .75rem; background: var(--inset); color: var(--secondary); }
     .notice strong { color: var(--text); }
     .notice.error { border-color: var(--error-border); background: var(--error-bg); color: var(--error-text); }
+    #refresh-error { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); z-index: 4; width: min(40rem, calc(100% - 2rem)); margin: 0; }
     .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: 2rem 0 .9rem; }
     .section-heading h2 { margin: 0; font-size: 1.15rem; }
     .section-heading p { margin: 0; font-size: .8rem; }
@@ -194,7 +195,8 @@ const dashboardHTML = `<!doctype html>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
-  <div class="shell">
+  <div class="shell" id="dashboard">
+    <p id="refresh-error" class="notice error" role="status" hidden>Updates unavailable. Displayed data may be out of date. Retrying automatically.</p>
     {{if .NotFound}}
       <header class="topline">
         <div><h1>Check not found</h1></div>
@@ -208,12 +210,12 @@ const dashboardHTML = `<!doctype html>
       <a class="back" href="/">← All checks</a>
       <header class="topline">
         <div><h1>{{.Current.Name}}</h1>{{if .Current.Description}}<p class="check-description">{{.Current.Description}}</p>{{end}}</div>
-        <div class="detail-status">{{template "themeControl"}}<span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
+        <div class="detail-status" id="detail-status">{{template "themeControl"}}<span class="badge status-{{statusClass .Current.Status}}">{{.Current.Status}}</span></div>
       </header>
       <main id="main">
         {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
-        <section class="panel detail-panel" aria-label="Check details">
+        <section id="check-details" class="panel detail-panel" aria-label="Check details">
           {{if .Current.Reason}}<p class="reason">{{.Current.Reason}}</p>{{end}}
           <div class="detail-grid">
             <div class="detail-fact"><strong>Schedule</strong><span>{{.Current.Schedule}}</span></div>
@@ -227,12 +229,12 @@ const dashboardHTML = `<!doctype html>
           </div>
           {{if .Current.DeliveryError}}<div class="notice error" role="status"><strong>Delivery to {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}webhook{{end}} failed:</strong> {{.Current.DeliveryError}}</div>{{else if .Current.Notify}}<p class="notice">Notifications use {{if .Info.WebhookName}}{{.Info.WebhookName}}{{else}}the configured webhook{{end}}.</p>{{end}}
         </section>
-        <section aria-labelledby="events-heading">
+        <section id="events" aria-labelledby="events-heading">
           <div class="section-heading"><h2 id="events-heading">Event history</h2><p class="muted">Recent pings: {{len .Current.Events}} · newest first · cleared on restart</p></div>
           {{if .Current.Events}}
             <ol class="event-list panel">
               {{range .Current.Events}}
-                <li class="event {{.Kind}}">
+                <li class="event {{.Kind}}" id="event-{{.ID}}">
                   <div class="event-top">
                     <div><strong>{{eventLabel .Kind}}</strong>{{if .Duration}}<span>Duration: {{formatDuration .Duration}}</span>{{end}}{{if .ExitCode}}<span>Exit code: {{.ExitCode}}</span>{{end}}</div>
                     {{template "timestamp" (timestamp .Time $.Now)}}
@@ -254,7 +256,7 @@ const dashboardHTML = `<!doctype html>
         {{template "themeControl"}}
       </header>
       <main id="main">
-        <div class="summary-bar">
+        <div class="summary-bar" id="summary-bar">
         <section class="summary-grid" aria-label="Filter checks by status">
           <button class="metric" type="button" data-filter="all" aria-pressed="true"><span class="metric-label">Checks</span><span class="metric-value">{{.Total}}</span></button>
           <button class="metric" type="button" data-filter="up" aria-pressed="false"><span class="metric-label">Up</span><span class="metric-value status-up">{{.Up}}</span></button>
@@ -268,9 +270,9 @@ const dashboardHTML = `<!doctype html>
         {{if .Info.StorageError}}<div class="notice error" role="alert">{{.Info.StorageError}}</div>{{end}}
         {{if .Info.ReloadError}}<div class="notice error" role="alert"><strong>Configuration reload issue:</strong> {{.Info.ReloadError}}</div>{{end}}
         {{if .Checks}}
-          <section class="check-grid" aria-label="Configured checks">
+          <section class="check-grid" id="check-grid" aria-label="Configured checks">
             {{range .Checks}}
-              <article class="check-card status-{{statusClass .Status}}" data-status="{{.Status}}" data-name="{{.Name}}" data-due="{{if ne .Status "paused"}}{{timeAttr .NextDue}}{{end}}">
+              <article class="check-card status-{{statusClass .Status}}" id="check-{{.Key}}" data-status="{{.Status}}" data-name="{{.Name}}" data-due="{{if ne .Status "paused"}}{{timeAttr .NextDue}}{{end}}">
                 <div class="card-top"><h2 class="check-name"><a class="check-link" href="/checks/{{.Key}}"{{if .Description}} aria-describedby="description-{{.Key}}"{{end}}>{{.Name}}</a>{{if .Description}}<span class="description-tooltip" id="description-{{.Key}}" role="tooltip">{{.Description}}</span>{{end}}</h2><span class="badge status-{{statusClass .Status}}">{{.Status}}</span></div>
                 <dl class="facts">
                   <div><dt>Last success</dt><dd>{{template "timestamp" (timestamp .LastSuccess $.Now)}}</dd></div>
@@ -291,7 +293,7 @@ const dashboardHTML = `<!doctype html>
 </body>
 </html>
 {{define "timestamp"}}{{if .Value.IsZero}}—{{else}}<time tabindex="0" datetime="{{timeAttr .Value}}" data-full="{{formatTime .Value}}" aria-label="{{formatTime .Value}}"{{if .Due}} data-due="true"{{end}}>{{if .Due}}{{dueTime .Value .Now}}{{else}}{{relativeTime .Value .Now}}{{end}}</time>{{end}}{{end}}
-{{define "themeControl"}}<div class="theme-switch" role="group" aria-label="Theme" data-choice="system">
+{{define "themeControl"}}<div class="theme-switch" id="theme-switch" role="group" aria-label="Theme" data-choice="system">
   <button type="button" data-theme-choice="system" aria-label="System theme" data-full="System theme" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
   <button type="button" data-theme-choice="light" aria-label="Light theme" data-full="Light theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
   <button type="button" data-theme-choice="dark" aria-label="Dark theme" data-full="Dark theme" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg></button>
@@ -316,23 +318,23 @@ const dashboardRefreshScript = `(() => {
     try { return localStorage.getItem(key); }
     catch (error) { console.warn("Preference could not be read.", error); return null; }
   };
-  const themeSwitch = document.querySelector(".theme-switch");
-  const themeButtons = themeSwitch.querySelectorAll("button");
-  const selectTheme = theme => {
+  const selectTheme = (theme = document.documentElement.dataset.theme || "system") => {
+    const themeSwitch = document.querySelector(".theme-switch");
     themeSwitch.dataset.choice = theme;
-    themeButtons.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme)));
+    themeSwitch.querySelectorAll("button").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme)));
     if (theme === "system") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = theme;
   };
-  selectTheme(document.documentElement.dataset.theme || "system");
-  themeButtons.forEach(button => button.addEventListener("click", () => {
+  selectTheme();
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-theme-choice]");
+    if (!button) return;
     selectTheme(button.dataset.themeChoice);
     savePreference("hc-theme", button.dataset.themeChoice);
-  }));
-  const grid = document.querySelector(".check-grid");
-  if (grid) {
-    const cards = Array.from(grid.querySelectorAll(".check-card"));
-    const sort = document.getElementById("sort-select");
+  });
+  let updateChecks = () => {};
+  const sort = document.getElementById("sort-select");
+  if (sort) {
     const directionButton = document.getElementById("sort-direction");
     let direction = readPreference("hc-sort-direction") === "desc" ? -1 : 1;
     const filters = Array.from(document.querySelectorAll("[data-filter]"));
@@ -342,7 +344,9 @@ const dashboardRefreshScript = `(() => {
     if (!filters.some(button => button.dataset.filter === status)) status = "all";
     const ranks = { down: 0, grace: 1, awaiting: 2, up: 3, paused: 4 };
     const names = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
-    const updateChecks = () => {
+    updateChecks = (root = document) => {
+      const grid = root.querySelector(".check-grid");
+      const cards = grid ? Array.from(grid.querySelectorAll(".check-card")) : [];
       cards.sort((a, b) => {
         let order = 0;
         if (sort.value === "state") order = ranks[a.dataset.status] - ranks[b.dataset.status];
@@ -358,9 +362,13 @@ const dashboardRefreshScript = `(() => {
       const action = direction === 1 ? "Sort descending" : "Sort ascending";
       directionButton.setAttribute("aria-label", action);
       directionButton.dataset.full = action;
-      cards.forEach(card => { card.hidden = status !== "all" && card.dataset.status !== status; grid.append(card); });
-      filters.forEach(button => button.setAttribute("aria-pressed", String(button.dataset.filter === status)));
-      document.getElementById("filter-empty").hidden = cards.some(card => !card.hidden);
+      cards.forEach((card, index) => {
+        card.hidden = status !== "all" && card.dataset.status !== status;
+        if (grid.children[index] !== card) grid.insertBefore(card, grid.children[index] || null);
+      });
+      root.querySelectorAll("[data-filter]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.filter === status)));
+      const empty = root.querySelector("#filter-empty");
+      if (empty) empty.hidden = cards.some(card => !card.hidden);
     };
     sort.addEventListener("change", () => { savePreference("hc-sort", sort.value); updateChecks(); });
     directionButton.addEventListener("click", () => {
@@ -410,14 +418,16 @@ const dashboardRefreshScript = `(() => {
     tooltip.style.setProperty("--tooltip-top", top + "px");
     tooltip.dataset.positioned = "true";
   };
-  document.querySelectorAll("[data-full], .check-link[aria-describedby]").forEach(element => {
-    element.addEventListener("mouseenter", () => positionTooltip(element));
-    element.addEventListener("focus", () => positionTooltip(element));
+  // Delegation also covers timestamps and descriptions added by a refresh.
+  for (const type of ["mouseover", "focusin"]) document.addEventListener(type, event => {
+    const trigger = event.target.closest("[data-full], .check-link[aria-describedby]");
+    if (trigger && !trigger.contains(event.relatedTarget)) positionTooltip(trigger);
   });
-  document.querySelectorAll("[data-full], .description-tooltip").forEach(tooltip => {
-    const trigger = tooltip.matches(".description-tooltip") ? tooltip.parentElement : tooltip;
-    trigger.addEventListener("mouseleave", () => { if (!trigger.contains(document.activeElement)) delete tooltip.dataset.dismissed; });
-    trigger.addEventListener("focusout", () => { if (!trigger.matches(":hover")) delete tooltip.dataset.dismissed; });
+  for (const type of ["mouseout", "focusout"]) document.addEventListener(type, event => {
+    const trigger = event.target.closest("[data-full], .check-name");
+    if (!trigger || trigger.contains(event.relatedTarget)) return;
+    const tooltip = trigger.matches(".check-name") ? trigger.querySelector(".description-tooltip") : trigger;
+    if (tooltip && !trigger.contains(document.activeElement) && !trigger.matches(":hover")) delete tooltip.dataset.dismissed;
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") document.querySelectorAll("[data-full]:hover, [data-full]:focus, .check-name:hover .description-tooltip, .check-name:focus-within .description-tooltip").forEach(tooltip => { tooltip.dataset.dismissed = "true"; });
@@ -426,9 +436,77 @@ const dashboardRefreshScript = `(() => {
   window.addEventListener("resize", positionVisibleTooltips);
   window.addEventListener("scroll", positionVisibleTooltips, true);
   window.setInterval(updateTimes, 1000);
-  window.setInterval(() => {
-    if (!document.querySelector("details[open]")) window.location.reload();
-  }, 15000);
+
+  // Reuse keyed cards/events and their children so focus, selection, expanded
+  // logs and log scroll positions survive. Only changed text/attributes are set.
+  const syncNode = (current, next) => {
+    if (current.nodeType !== Node.ELEMENT_NODE) {
+      if (current.nodeValue !== next.nodeValue) current.nodeValue = next.nodeValue;
+      return;
+    }
+    if (current.matches(".theme-switch, .toolbar, #refresh-error")) return;
+    const clientAttribute = name => name === "open" || name === "style" || name === "data-dismissed" || name === "data-positioned" ||
+      (current.matches("time") && (name === "data-full" || name === "aria-label"));
+    for (const attribute of Array.from(current.attributes)) {
+      if (!clientAttribute(attribute.name) && !next.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+    }
+    for (const attribute of next.attributes) {
+      if (!clientAttribute(attribute.name) && current.getAttribute(attribute.name) !== attribute.value) current.setAttribute(attribute.name, attribute.value);
+    }
+    // updateTimes owns the displayed text, using the refreshed datetime.
+    if (current.matches("time")) return;
+    const remaining = Array.from(current.childNodes);
+    let cursor = current.firstChild;
+    for (const child of Array.from(next.childNodes)) {
+      const index = remaining.findIndex(node => node.id === child.id && node.nodeType === child.nodeType && node.nodeName === child.nodeName);
+      const match = index < 0 ? child : remaining.splice(index, 1)[0];
+      if (match !== cursor) current.insertBefore(match, cursor);
+      if (index >= 0) syncNode(match, child);
+      cursor = match.nextSibling;
+    }
+    for (const node of remaining) node.remove();
+  };
+  let refreshing = false;
+  const refreshDashboard = async () => {
+    if (refreshing) return;
+    refreshing = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    const errorNotice = document.getElementById("refresh-error");
+    try {
+      const response = await fetch(window.location.href, { cache: "no-store", redirect: "error", signal: controller.signal });
+      if ((!response.ok && response.status !== 404) || !response.headers.get("Content-Type")?.startsWith("text/html")) throw new Error("Unexpected dashboard response: " + response.status);
+      const next = new DOMParser().parseFromString(await response.text(), "text/html");
+      const dashboard = next.getElementById("dashboard");
+      if (!dashboard || !next.getElementById("main") || !next.querySelector(".theme-switch")) throw new Error("Dashboard markup is missing");
+      // Sort/filter the detached document first to avoid moving focused cards
+      // back to server order before restoring the user's preferred order.
+      updateChecks(next);
+      const x = window.scrollX, y = window.scrollY;
+      const focused = document.activeElement;
+      const selection = document.getSelection();
+      const selected = selection && !selection.isCollapsed ? [selection.anchorNode, selection.anchorOffset, selection.focusNode, selection.focusOffset] : null;
+      syncNode(document.getElementById("dashboard"), dashboard);
+      document.title = next.title;
+      selectTheme();
+      updateTimes();
+      // Moving an existing node with insertBefore can clear browser focus and
+      // selection. Restore them only if the original content still exists.
+      if (focused.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
+      const validPoint = (node, offset) => node.isConnected && offset <= (node.length ?? node.childNodes.length);
+      if (selected && validPoint(selected[0], selected[1]) && validPoint(selected[2], selected[3])) selection.setBaseAndExtent(...selected);
+      window.scrollTo(x, y);
+      positionVisibleTooltips();
+      errorNotice.hidden = true;
+    } catch (error) {
+      errorNotice.hidden = false;
+      console.warn("Dashboard refresh failed.", error);
+    } finally {
+      window.clearTimeout(timeout);
+      refreshing = false;
+    }
+  };
+  window.setInterval(refreshDashboard, 15000);
 })();`
 
 func renderDashboard(w http.ResponseWriter, r *http.Request, e *Engine) {
@@ -511,7 +589,7 @@ func setDashboardHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	refreshScriptHash := sha256.Sum256([]byte(dashboardRefreshScript))
 	themeScriptHash := sha256.Sum256([]byte(dashboardThemeScript))
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-"+base64.StdEncoding.EncodeToString(refreshScriptHash[:])+"' 'sha256-"+base64.StdEncoding.EncodeToString(themeScriptHash[:])+"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'sha256-"+base64.StdEncoding.EncodeToString(refreshScriptHash[:])+"' 'sha256-"+base64.StdEncoding.EncodeToString(themeScriptHash[:])+"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 }
 
 func writeDashboardError(w http.ResponseWriter, r *http.Request, status int, body string) {

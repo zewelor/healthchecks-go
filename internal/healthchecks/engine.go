@@ -19,6 +19,7 @@ type Input struct {
 }
 
 type Event struct {
+	ID        string
 	Time      time.Time
 	Kind      string
 	Body      string
@@ -247,7 +248,7 @@ func (e *Engine) pingLocked(id string, in Input) bool {
 		in.Body = strings.Clone(in.Body[:BodyLimit])
 		in.Truncated = true
 	}
-	event := Event{Time: now, Kind: in.Kind, Body: in.Body, RID: in.RID, Duration: duration, Truncated: in.Truncated}
+	event := Event{ID: rand.Text(), Time: now, Kind: in.Kind, Body: in.Body, RID: in.RID, Duration: duration, Truncated: in.Truncated}
 	if in.ExitCode != nil {
 		code := *in.ExitCode
 		event.ExitCode = &code

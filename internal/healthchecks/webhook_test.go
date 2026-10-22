@@ -146,8 +146,8 @@ func TestWebhookNotifiesOncePerOutageAndOnlyRecoversAfterSuccessfulDown(t *testi
 		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
 			t.Errorf("decode webhook: %v", err)
 		}
-		statuses <- event.Status
 		requests.Add(1)
+		statuses <- event.Status
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
