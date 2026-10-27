@@ -84,15 +84,26 @@ With a nonempty `HC_METRICS_KEY`, `/metrics` requires `Authorization: Bearer <HC
 
 ## Runtime
 
-Application logs use structured text on stderr. `HC_LOG_LEVEL` sets the minimum severity:
+Application logs use one JSON object per line on stderr. `HC_LOG_LEVEL` sets the minimum severity:
 `debug`, `info` (default), `warn`, or `error` (case-insensitive). Invalid values prevent startup.
 Changes require a restart.
 
 Accepted pings emit `INFO` after the state transaction succeeds, including the check name,
 dashboard key, event kind, resulting status, whether the check is paused (`ignored`), and exit code when supplied.
-Ping UUIDs, URLs, run IDs, request bodies, and authorization headers are omitted.
+Use `HC_PING_LOGS` to choose their content (case-insensitive; invalid values prevent startup):
+
+- `off`: do not emit accepted-ping records.
+- `metadata` (default): emit the fields listed above without the ping body or run ID.
+- `full`: also emit `event_id`, `event_time`, `body`, `truncated`, and, when available,
+  `rid` and `duration_ns` (execution duration in nanoseconds). The body and truncation flag
+  match the dashboard event, including the 8192-byte body limit.
+
+`full` sends the submitted body and run ID to the log collector; they may contain sensitive data.
+Ping URLs, ping UUIDs and authorization headers are not added to records. Submitted bodies or run IDs
+can themselves contain sensitive values. A `fail` ping is still an `INFO` record; its `kind` and exit code describe the failure.
 Successful configuration reloads emit `WARN`; reload, storage, and server errors emit `ERROR`.
-Set `HC_LOG_LEVEL=warn` to silence ping logs while retaining reloads and errors.
+`HC_LOG_LEVEL=warn` suppresses accepted-ping records in all modes while retaining reloads and errors.
+An external collector can forward container logs to VictoriaLogs; the application does not send logs directly.
 
 PostgreSQL needs a persistent session; transaction-mode connection poolers are unsupported.
 The container reads configuration as UID 65532. Mount the configuration directory for reloads;

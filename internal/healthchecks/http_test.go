@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func capturePingLogs(t *testing.T, level slog.Level) *bytes.Buffer {
@@ -79,6 +80,65 @@ func TestWarnLevelSuppressesPingLogs(t *testing.T) {
 	}
 	if output.Len() != 0 || onlyCheck(t, e).Status != "down" {
 		t.Fatalf("WARN must suppress ping logs while still recording failure: %s", output.String())
+	}
+}
+
+func TestPingLogModes(t *testing.T) {
+	for _, mode := range []string{"off", "metadata", "full"} {
+		t.Run(mode, func(t *testing.T) {
+			output := capturePingLogs(t, slog.LevelInfo)
+			e, now := newTestEngine(t)
+			parsed, err := ParsePingLogMode(mode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.SetPingLogMode(parsed)
+			h := NewHandler(e, "")
+			if w := request(h, "POST", "/ping/"+testUUID+"/start?rid="+otherUUID, "starting", ""); w.Code != 200 {
+				t.Fatal(w.Code)
+			}
+			*now = now.Add(4 * time.Second)
+			body := "line 1\n" + strings.Repeat("x", BodyLimit)
+			if w := request(h, "POST", "/ping/"+testUUID+"/7?rid="+otherUUID, body, ""); w.Code != 200 {
+				t.Fatal(w.Code)
+			}
+			view := onlyCheck(t, e)
+			if view.Status != "down" || len(view.Events) != 2 {
+				t.Fatalf("ping state changed: %+v", view)
+			}
+			if mode == "off" {
+				if output.Len() != 0 {
+					t.Fatalf("off emitted ping logs: %s", output.String())
+				}
+				return
+			}
+			lines := bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n"))
+			if len(lines) != 2 {
+				t.Fatalf("expected one JSON record per ping: %s", output.String())
+			}
+			var entry map[string]any
+			if err := json.Unmarshal(lines[1], &entry); err != nil {
+				t.Fatal(err)
+			}
+			if entry["level"] != "INFO" || entry["kind"] != "fail" || entry["status"] != "down" || entry["exit_code"] != float64(7) {
+				t.Fatalf("wrong metadata: %s", lines[1])
+			}
+			if strings.Contains(output.String(), testUUID) {
+				t.Fatalf("ping credential exposed: %s", output.String())
+			}
+			if mode == "metadata" {
+				for _, key := range []string{"body", "rid", "event_id", "event_time", "duration_ns", "truncated"} {
+					if _, ok := entry[key]; ok {
+						t.Fatalf("metadata mode exposed %s: %s", key, lines[1])
+					}
+				}
+				return
+			}
+			event := view.Events[0]
+			if entry["body"] != event.Body || entry["rid"] != event.RID || entry["event_id"] != event.ID || entry["event_time"] != event.Time.Format(time.RFC3339Nano) || entry["duration_ns"] != float64(4*time.Second) || entry["truncated"] != true {
+				t.Fatalf("log differs from dashboard event: %s, %+v", lines[1], event)
+			}
+		})
 	}
 }
 

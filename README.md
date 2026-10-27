@@ -27,20 +27,44 @@ cp config.example.yml config.yml
 docker run --rm -p 127.0.0.1:8000:8000 \
   -e DB_HOST -e DB_PORT -e DB_NAME \
   -e DB_USER -e DB_PASSWORD -e DB_SSLMODE \
-  -e HC_SITE_NAME -e HC_METRICS_KEY \
+  -e HC_SITE_NAME -e HC_METRICS_KEY -e HC_LOG_LEVEL -e HC_PING_LOGS \
   -v "$PWD:/config:ro" ghcr.io/zewelor/healthchecks-go:latest
 ```
 
 Open <http://localhost:8000/>. Run one instance; check state survives restarts, recent ping logs do not.
 
-| Variable | Value |
+## Environment variables
+
+Database settings:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DB_HOST` | Required | PostgreSQL host reachable from the container. |
+| `DB_PORT` | `5432` | PostgreSQL port. |
+| `DB_NAME` | Required | Database name. |
+| `DB_USER` | Required | Database user. |
+| `DB_PASSWORD` | Required | Database password. |
+| `DB_SSLMODE` | `require` | TLS mode: `require`, `verify-ca`, `verify-full`, or `disable`. |
+
+Application settings:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `HC_SITE_NAME` | `Healthchecks` | Dashboard title. |
+| `HC_METRICS_KEY` | Unset | If set, `/metrics` requires this value as a Bearer token. |
+| `HC_LOG_LEVEL` | `info` | Minimum log level: `debug`, `info`, `warn`, or `error`. |
+| `HC_PING_LOGS` | `metadata` | Detail of accepted-ping logs: `off`, `metadata`, or `full` (see below). |
+
+Application logs are JSON on stderr. `HC_PING_LOGS` controls what is included:
+
+| Value | Accepted-ping logs |
 | --- | --- |
-| `DB_HOST` | PostgreSQL host reachable from the container |
-| `DB_PORT` | Port, default `5432` |
-| `DB_NAME` | Database name |
-| `DB_USER` | Database user |
-| `DB_PASSWORD` | Database password |
-| `DB_SSLMODE` | `require` (default), `verify-ca`, `verify-full`, or `disable` |
+| `off` | No accepted-ping records. |
+| `metadata` | Check name and key, ping kind, status, and optional exit code. |
+| `full` | Metadata plus the dashboard body, event time and truncation flag; run ID and duration when available. |
+
+Ping records use `info`, so `HC_LOG_LEVEL=warn` or `error` suppresses them in every mode.
+The `full` mode includes submitted content, which may contain sensitive data. Environment changes require a restart.
 
 ## Configuration
 
@@ -49,10 +73,9 @@ and either `every` (such as `5m` or `24h`) or `cron`. Keep UUIDs stable to prese
 Optional fields: `description` (plain text), `timezone`, `paused`, `notify`, and `depends_on_regions`.
 Set `public_url` to the service's HTTP(S) origin. YAML changes reload automatically.
 
-Set `HC_SITE_NAME` to customize the dashboard title. Theme, filter, and sort preferences are saved in the browser.
+Theme, filter, and sort preferences are saved in the browser.
 Reload the page manually to see updated check statuses and recent pings.
 Relative timestamps continue counting locally; the dashboard does not fetch updates in the background.
-Set `HC_LOG_LEVEL` to `debug`, `info` (default), `warn`, or `error` to filter application logs.
 For cron syntax, webhooks, and other details, see the [reference](docs/reference.md).
 
 ## Pings and metrics

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -304,12 +305,17 @@ CREATE TRIGGER hc_test_reject_write BEFORE INSERT OR UPDATE OR DELETE ON public.
 		t.Fatal(err)
 	}
 	defer admin.Exec(context.Background(), `DROP TRIGGER IF EXISTS hc_test_reject_write ON public.check_state; DROP FUNCTION IF EXISTS public.hc_test_reject_write()`)
-	output := capturePingLogs(t, slog.LevelInfo)
-	if _, err := e.Ping(testUUID, Input{Kind: "success"}); err == nil {
-		t.Fatal("ping accepted despite failed write")
-	}
-	if strings.Contains(output.String(), "Ping accepted") || !strings.Contains(output.String(), `"level":"ERROR"`) || !strings.Contains(output.String(), "Ping could not be saved") {
-		t.Fatalf("failed transaction logged incorrectly: %s", output.String())
+	for _, mode := range []PingLogMode{PingLogMetadata, PingLogFull, PingLogOff} {
+		t.Run(fmt.Sprint(mode), func(t *testing.T) {
+			e.SetPingLogMode(mode)
+			output := capturePingLogs(t, slog.LevelInfo)
+			if _, err := e.Ping(testUUID, Input{Kind: "success", Body: "private data"}); err == nil {
+				t.Fatal("ping accepted despite failed write")
+			}
+			if strings.Contains(output.String(), "Ping accepted") || strings.Contains(output.String(), "private data") || !strings.Contains(output.String(), `"level":"ERROR"`) || !strings.Contains(output.String(), "Ping could not be saved") {
+				t.Fatalf("failed transaction logged incorrectly: %s", output.String())
+			}
+		})
 	}
 	replacement := strings.ReplaceAll(config, testUUID, "22222222-2222-4222-8222-222222222222")
 	if err := e.Reload(parseTestConfig(t, replacement)); err == nil {

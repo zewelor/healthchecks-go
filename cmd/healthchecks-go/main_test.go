@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"log/slog"
@@ -40,9 +41,21 @@ func TestLogLevel(t *testing.T) {
 				t.Fatalf("unexpected log entries: %s", output.String())
 			}
 			for i, level := range tc.want {
-				if !strings.Contains(lines[i], "level="+level) {
+				var entry map[string]any
+				if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil || entry["level"] != level {
 					t.Fatalf("entry %d: %s, want %s", i, lines[i], level)
 				}
+			}
+		})
+	}
+}
+
+func TestInvalidPingLogModeRejectsStartup(t *testing.T) {
+	for _, value := range []string{"verbose", "true", "full "} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("HC_PING_LOGS", value)
+			if _, err := runCommand(t, "-config", "../../config.example.yml", "-check"); err == nil || !strings.Contains(err.Error(), "HC_PING_LOGS") {
+				t.Fatalf("invalid ping log mode accepted: %v", err)
 			}
 		})
 	}
@@ -76,7 +89,7 @@ func TestHTTPServerErrorsAtEveryLogLevel(t *testing.T) {
 			if err := server.Serve(&failingAcceptListener{}); !errors.Is(err, net.ErrClosed) {
 				t.Fatalf("unexpected server error: %v", err)
 			}
-			if got := output.String(); !strings.Contains(got, "level=ERROR") || !strings.Contains(got, "http: Accept error:") || !strings.Contains(got, syscall.EMFILE.Error()) {
+			if got := output.String(); !strings.Contains(got, `"level":"ERROR"`) || !strings.Contains(got, "http: Accept error:") || !strings.Contains(got, syscall.EMFILE.Error()) {
 				t.Fatalf("HTTP accept failure missing at ERROR severity: %q", got)
 			}
 		})

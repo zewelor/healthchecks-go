@@ -40,13 +40,17 @@ func configureLogging(value string, output io.Writer) error {
 	default:
 		return errors.New("HC_LOG_LEVEL must be debug, info, warn or error")
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{Level: level})))
 	slog.SetLogLoggerLevel(slog.LevelError)
 	return nil
 }
 
 func run() error {
 	if err := configureLogging(os.Getenv("HC_LOG_LEVEL"), os.Stderr); err != nil {
+		return err
+	}
+	pingLogMode, err := healthchecks.ParsePingLogMode(os.Getenv("HC_PING_LOGS"))
+	if err != nil {
 		return err
 	}
 	path := flag.String("config", "config.yml", "YAML configuration file")
@@ -87,6 +91,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	e.SetPingLogMode(pingLogMode)
 	defer e.Close()
 	w := healthchecks.NewConfigWatcher(*path, e, os.LookupEnv)
 	if _, err := w.Check(); err != nil {

@@ -1,10 +1,12 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +20,65 @@ import (
 )
 
 const uuid = "11111111-1111-4111-8111-111111111111"
+
+func TestPingLogsMatchDashboard(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	config := "public_url: https://status.example.test\nchecks:\n  - uuid: " + uuid + "\n    name: Backup\n    every: 5m\n    grace: 1m\n"
+	parsed, err := healthchecks.ParseConfig([]byte(config), os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := healthchecks.NewEngine(parsed, time.Now)
+	mode, err := healthchecks.ParsePingLogMode("full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetPingLogMode(mode)
+	server := httptest.NewServer(healthchecks.NewHandler(e, ""))
+	defer server.Close()
+	const rid = "22222222-2222-4222-8222-222222222222"
+	for _, ping := range []struct{ path, body string }{
+		{"/start?rid=" + rid, "starting"},
+		{"/7?rid=" + rid, "failure\n" + strings.Repeat("x", healthchecks.BodyLimit)},
+	} {
+		response, err := server.Client().Post(server.URL+"/ping/"+uuid+ping.path, "text/plain", strings.NewReader(ping.body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatalf("ping returned %d", response.StatusCode)
+		}
+	}
+	view := e.Snapshot()[0]
+	response, err := server.Client().Get(server.URL + "/checks/" + view.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != 200 || !bytes.Contains(page, []byte("failure\n")) || !bytes.Contains(page, []byte("Log was truncated")) {
+		t.Fatalf("dashboard did not show truncated log: status=%d error=%v", response.StatusCode, err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(logs.Bytes()), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("expected two JSON log records, got %d", len(lines))
+	}
+	var entry map[string]any
+	if err := json.Unmarshal(lines[1], &entry); err != nil {
+		t.Fatal(err)
+	}
+	event := view.Events[0]
+	if entry["body"] != event.Body || entry["event_id"] != event.ID || entry["rid"] != rid || entry["truncated"] != true || entry["kind"] != "fail" || entry["exit_code"] != float64(7) {
+		t.Fatalf("JSON record differs from dashboard event: %+v", entry)
+	}
+	if bytes.Contains(logs.Bytes(), []byte(uuid)) {
+		t.Fatal("ping URL credential leaked into logs")
+	}
+}
 
 func TestExplicitIdentityAcrossReloads(t *testing.T) {
 	lookup := func(string) (string, bool) { return "", false }

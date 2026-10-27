@@ -3,6 +3,7 @@ package healthchecks
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"log/slog"
 	"sort"
 	"strings"
@@ -27,6 +28,27 @@ type Event struct {
 	ExitCode  *int
 	Duration  *time.Duration
 	Truncated bool
+}
+
+type PingLogMode int
+
+const (
+	PingLogMetadata PingLogMode = iota
+	PingLogOff
+	PingLogFull
+)
+
+func ParsePingLogMode(value string) (PingLogMode, error) {
+	switch strings.ToLower(value) {
+	case "", "metadata":
+		return PingLogMetadata, nil
+	case "off":
+		return PingLogOff, nil
+	case "full":
+		return PingLogFull, nil
+	default:
+		return PingLogMetadata, errors.New("HC_PING_LOGS must be off, metadata or full")
+	}
 }
 
 type CheckView struct {
@@ -67,6 +89,7 @@ type checkState struct {
 
 type Engine struct {
 	mu                   sync.Mutex
+	pingLogMode          PingLogMode
 	checks               map[string]*checkState
 	now                  func() time.Time
 	started              time.Time
@@ -79,6 +102,12 @@ type Engine struct {
 	applied              *Config
 	targetHash, bodyHash string
 	wake                 chan struct{}
+}
+
+func (e *Engine) SetPingLogMode(mode PingLogMode) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.pingLogMode = mode
 }
 
 func NewEngine(c *Config, now func() time.Time) *Engine {
@@ -182,10 +211,15 @@ func (e *Engine) Info() ServerView {
 func (e *Engine) Ping(id string, in Input) (bool, error) {
 	found := false
 	var attrs []slog.Attr
+	mode := PingLogMetadata
 	err := e.transact(context.Background(), func() {
 		found = e.pingLocked(id, in)
 		if found {
 			s := e.checks[id]
+			mode = e.pingLogMode
+			if mode == PingLogOff {
+				return
+			}
 			attrs = []slog.Attr{
 				slog.String("check", s.config.Name),
 				slog.String("key", s.config.Key),
@@ -196,11 +230,21 @@ func (e *Engine) Ping(id string, in Input) (bool, error) {
 			if in.ExitCode != nil {
 				attrs = append(attrs, slog.Int("exit_code", *in.ExitCode))
 			}
+			if mode == PingLogFull {
+				event := s.history[len(s.history)-1]
+				attrs = append(attrs, slog.String("event_id", event.ID), slog.Time("event_time", event.Time), slog.String("body", event.Body), slog.Bool("truncated", event.Truncated))
+				if event.RID != "" {
+					attrs = append(attrs, slog.String("rid", event.RID))
+				}
+				if event.Duration != nil {
+					attrs = append(attrs, slog.Int64("duration_ns", int64(*event.Duration)))
+				}
+			}
 		}
 	})
 	if err != nil {
 		slog.Error("Ping could not be saved", "error", err)
-	} else if found {
+	} else if found && mode != PingLogOff {
 		slog.LogAttrs(context.Background(), slog.LevelInfo, "Ping accepted", attrs...)
 	}
 	return found, err
