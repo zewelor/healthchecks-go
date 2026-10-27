@@ -225,7 +225,6 @@ func (e *Engine) Ping(id string, in Input) (bool, error) {
 				slog.String("key", s.config.Key),
 				slog.String("kind", in.Kind),
 				slog.String("status", s.status),
-				slog.Bool("ignored", s.config.Paused),
 			}
 			if in.ExitCode != nil {
 				attrs = append(attrs, slog.Int("exit_code", *in.ExitCode))

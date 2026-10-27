@@ -89,7 +89,7 @@ Application logs use one JSON object per line on stderr. `HC_LOG_LEVEL` sets the
 Changes require a restart.
 
 Accepted pings emit `INFO` after the state transaction succeeds, including the check name,
-dashboard key, event kind, resulting status, whether the check is paused (`ignored`), and exit code when supplied.
+dashboard key, event kind, resulting status, and exit code when supplied.
 Use `HC_PING_LOGS` to choose their content (case-insensitive; invalid values prevent startup):
 
 - `off`: do not emit accepted-ping records.

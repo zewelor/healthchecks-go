@@ -53,7 +53,7 @@ func TestPingApplicationLogs(t *testing.T) {
 			if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
 				t.Fatalf("expected one log entry: %s (%v)", output.String(), err)
 			}
-			if entry["level"] != "INFO" || entry["msg"] != "Ping accepted" || entry["check"] != "Heartbeat" || entry["key"] != onlyCheck(t, e).Key || entry["kind"] != tc.kind || entry["status"] != tc.status || entry["ignored"] != tc.paused {
+			if entry["level"] != "INFO" || entry["msg"] != "Ping accepted" || entry["check"] != "Heartbeat" || entry["key"] != onlyCheck(t, e).Key || entry["kind"] != tc.kind || entry["status"] != tc.status {
 				t.Fatalf("unexpected ping log: %s", output.String())
 			}
 			if tc.exitCode != nil {
