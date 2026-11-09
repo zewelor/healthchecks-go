@@ -9,6 +9,18 @@
     {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
+    },
+    {
+      "description": "Group Go versions in the module, build image and CI",
+      "matchDepNames": ["go", "docker.io/library/golang"],
+      "groupName": "Go toolchain"
+    },
+    {
+      "description": "Keep the Go module directive up to date",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
     }
   ]
 }
