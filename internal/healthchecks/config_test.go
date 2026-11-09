@@ -70,6 +70,7 @@ func TestSiteNameFromEnvironment(t *testing.T) {
 
 func TestConfigRejectsInvalidDefinitions(t *testing.T) {
 	for name, input := range map[string]string{
+		"YAML alias":             strings.Replace(simpleConfig, "name: Heartbeat", "name: &name Heartbeat\n    description: *name", 1),
 		"null boolean":           strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    notify: null", 1),
 		"numeric description":    strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    description: 123", 1),
 		"null description":       strings.Replace(simpleConfig, "every: 5m", "every: 5m\n    description: null", 1),

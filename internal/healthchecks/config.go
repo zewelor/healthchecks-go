@@ -17,7 +17,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/robfig/cron/v3"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 const (
