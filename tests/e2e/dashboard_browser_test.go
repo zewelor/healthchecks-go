@@ -99,6 +99,53 @@ return "ok";
 })()`, "eval", "--stdin")
 	}
 	browser("", "--init-script", initFile, "open", server.URL)
+	browser("", "set", "viewport", "900", "844")
+	eval(`
+window.sizeAt900 = getComputedStyle(document.documentElement).fontSize;
+const select = document.querySelector('#sort-select').getBoundingClientRect();
+const arrow = document.querySelector('.sort-chevron').getBoundingClientRect();
+assert(arrow.top >= select.top && arrow.bottom <= select.bottom, 'sort arrow is detached from the select');
+`)
+	browser("", "set", "viewport", "901", "844")
+	eval(`assert(getComputedStyle(document.documentElement).fontSize === window.sizeAt900, 'font size jumps at the responsive breakpoint')`)
+	eval(`
+document.documentElement.style.fontSize = '156.25%';
+const labels = [...document.querySelectorAll('.metric-label')].map(label => {
+  const range = document.createRange(); range.selectNodeContents(label);
+  return range.getBoundingClientRect();
+});
+assert(labels.every((a, i) => labels.slice(i + 1).every(b => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)), 'summary labels overlap with enlarged text');
+document.documentElement.style.fontSize = '';
+`)
+	browser("", "set", "viewport", "320", "844")
+	eval(`
+document.documentElement.style.fontSize = '200%';
+assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, 'overview overflows a narrow viewport with enlarged text');
+const labels = [...document.querySelectorAll('.metric-label')].map(label => {
+  const range = document.createRange(); range.selectNodeContents(label);
+  return range.getBoundingClientRect();
+});
+assert(labels.every((a, i) => labels.slice(i + 1).every(b => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top)), 'summary labels overlap on a narrow viewport');
+document.documentElement.style.fontSize = '';
+`)
+	browser("", "set", "viewport", "1280", "720")
+	eval(`assert(document.documentElement.scrollWidth <= document.documentElement.clientWidth, 'overview overflows a desktop viewport')`)
+	eval(`
+const dark = document.querySelector('[data-theme-choice="dark"]');
+dark.focus();
+await new Promise(resolve => setTimeout(resolve, 350));
+const tooltipStyle = getComputedStyle(dark, '::after');
+assert(tooltipStyle.visibility === 'visible', 'theme tooltip is invisible on keyboard focus');
+assert(parseFloat(tooltipStyle.left) >= 0 && parseFloat(tooltipStyle.left) + parseFloat(tooltipStyle.width) <= innerWidth, 'theme tooltip is outside the viewport');
+dark.click();
+await new Promise(resolve => setTimeout(resolve, 250));
+const themeSwitch = document.querySelector('.theme-switch');
+const indicator = getComputedStyle(themeSwitch, '::before');
+const indicatorCenter = themeSwitch.getBoundingClientRect().left + parseFloat(indicator.left) + new DOMMatrix(indicator.transform).m41 + parseFloat(indicator.width) / 2;
+const darkBounds = dark.getBoundingClientRect();
+assert(Math.abs(indicatorCenter - (darkBounds.left + darkBounds.width / 2)) < 1, 'theme selection indicator is misaligned');
+dark.blur();
+`)
 	eval(`
 document.querySelector('[data-theme-choice="dark"]').click();
 document.querySelector('[data-filter="up"]').click();
