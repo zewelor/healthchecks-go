@@ -91,6 +91,10 @@ The dashboard has no built-in login; use an authentication proxy if needed.
 Requires Go 1.27+. Run from source with `go run ./cmd/healthchecks-go -config config.yml`
 using the same database environment variables.
 
+To preview the dashboard locally with sample data and no database, run
+`go run ./scripts/dashboard-preview` and open <http://127.0.0.1:18765/>.
+The preview is temporary, uses in-memory data, and listens only on localhost.
+
 ```sh
 go vet ./...
 go test -race ./...

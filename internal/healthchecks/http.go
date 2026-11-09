@@ -24,6 +24,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
+	case r.URL.EscapedPath() == "/icon.svg":
+		serveDashboardAsset(w, r, "image/svg+xml", dashboardIcon)
+	case r.URL.EscapedPath() == "/favicon.svg":
+		serveDashboardAsset(w, r, "image/svg+xml", dashboardFavicon)
+	case r.URL.EscapedPath() == "/favicon.ico":
+		serveDashboardAsset(w, r, "image/x-icon", dashboardFaviconICO)
 	case strings.HasPrefix(r.URL.Path, "/ping/"):
 		h.ping(w, r)
 	case r.URL.Path == "/metrics":

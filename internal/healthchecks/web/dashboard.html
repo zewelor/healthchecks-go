@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{if .NotFound}}Check not found · {{else if .HasCurrent}}{{.Current.Name}} · {{end}}{{.Info.SiteName}}</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>{{.ThemeScript}}</script>
   <style>{{.Style}}</style>
 </head>
@@ -65,7 +67,7 @@
       </main>
     {{else}}
       <header class="topline">
-        <div><h1>{{.Info.SiteName}}</h1></div>
+        <div class="brand"><img src="/icon.svg" alt="" width="40" height="40"><h1>{{.Info.SiteName}}</h1></div>
         {{template "themeControl"}}
       </header>
       <main id="main">

@@ -10,9 +10,11 @@ a:hover { color: var(--text); text-decoration: underline; }
 a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 .skip-link { position: absolute; left: 1rem; top: -5rem; z-index: 3; background: var(--text); color: var(--bg); padding: .65rem 1rem; border-radius: .5rem; }
 .skip-link:focus { top: 1rem; }
-.shell { width: min(100% - 2rem, 1240px); margin: 0 auto; padding: 2.25rem 0 3rem; }
+.shell { width: min(100% - 2rem, 1736px); margin: 0 auto; padding: 2.25rem 0 3rem; }
 .topline > div:first-child { min-width: 0; }
 .topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 1.6rem; }
+.brand { display: flex; align-items: center; gap: .7rem; }
+.brand img { flex: none; }
 h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2rem); letter-spacing: -.04em; line-height: 1.1; overflow-wrap: anywhere; }
 h2, h3, p { margin-top: 0; }
 .lede { margin: .65rem 0 0; color: var(--muted); }

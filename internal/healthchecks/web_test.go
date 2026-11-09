@@ -11,6 +11,43 @@ import (
 	"time"
 )
 
+func TestDashboardBrandAssets(t *testing.T) {
+	h := NewHandler(dashboardEngine(t), "")
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+	for _, link := range []string{`href="/favicon.svg"`, `href="/favicon.ico"`, `src="/icon.svg"`} {
+		if !strings.Contains(page.Body.String(), link) {
+			t.Errorf("dashboard is missing %s", link)
+		}
+	}
+	if !strings.Contains(page.Header().Get("Content-Security-Policy"), "img-src 'self'") {
+		t.Error("dashboard does not permit same-origin images")
+	}
+	for _, asset := range []struct{ path, contentType string }{
+		{"/icon.svg", "image/svg+xml"},
+		{"/favicon.svg", "image/svg+xml"},
+		{"/favicon.ico", "image/x-icon"},
+	} {
+		t.Run(asset.path, func(t *testing.T) {
+			get := httptest.NewRecorder()
+			h.ServeHTTP(get, httptest.NewRequest(http.MethodGet, asset.path, nil))
+			if get.Code != http.StatusOK || get.Header().Get("Content-Type") != asset.contentType || get.Body.Len() == 0 {
+				t.Fatalf("GET = %d, content type %q, length %d", get.Code, get.Header().Get("Content-Type"), get.Body.Len())
+			}
+		})
+	}
+	head := httptest.NewRecorder()
+	h.ServeHTTP(head, httptest.NewRequest(http.MethodHead, "/favicon.svg", nil))
+	if head.Code != http.StatusOK || head.Body.Len() != 0 {
+		t.Errorf("HEAD = %d, body length %d", head.Code, head.Body.Len())
+	}
+	post := httptest.NewRecorder()
+	h.ServeHTTP(post, httptest.NewRequest(http.MethodPost, "/favicon.svg", nil))
+	if post.Code != http.StatusMethodNotAllowed || post.Header().Get("Allow") != "GET, HEAD" {
+		t.Errorf("POST = %d, Allow %q", post.Code, post.Header().Get("Allow"))
+	}
+}
+
 func dashboardEngine(t *testing.T) *Engine {
 	t.Helper()
 	now := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)

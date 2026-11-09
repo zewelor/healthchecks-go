@@ -46,6 +46,26 @@ var dashboardScript string
 //go:embed web/theme.js
 var dashboardThemeScript string
 
+//go:embed web/icon.svg
+var dashboardIcon []byte
+
+//go:embed web/favicon.svg
+var dashboardFavicon []byte
+
+//go:embed web/favicon.ico
+var dashboardFaviconICO []byte
+
+func serveDashboardAsset(w http.ResponseWriter, r *http.Request, contentType string, data []byte) {
+	if !readMethod(w, r) {
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
+}
+
 var dashboardTemplate = template.Must(template.New("dashboard").Funcs(template.FuncMap{
 	"eventLabel": func(kind string) string {
 		switch kind {
@@ -165,7 +185,7 @@ func setDashboardHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	scriptHash := sha256.Sum256([]byte(dashboardScript))
 	themeScriptHash := sha256.Sum256([]byte(dashboardThemeScript))
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'sha256-"+base64.StdEncoding.EncodeToString(scriptHash[:])+"' 'sha256-"+base64.StdEncoding.EncodeToString(themeScriptHash[:])+"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; connect-src 'self'; img-src 'self'; style-src 'unsafe-inline'; script-src 'sha256-"+base64.StdEncoding.EncodeToString(scriptHash[:])+"' 'sha256-"+base64.StdEncoding.EncodeToString(themeScriptHash[:])+"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 }
 
 func writeDashboardError(w http.ResponseWriter, r *http.Request, status int, body string) {
