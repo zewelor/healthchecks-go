@@ -47,6 +47,8 @@ jobs:
           cache: true
       - name: Check formatting
         run: test -z "$(gofmt -l cmd internal tests/e2e)"
+      - name: Check Go module files
+        run: go mod tidy -diff
       - name: Vet
         run: go vet ./...
       - name: Test with race detector
