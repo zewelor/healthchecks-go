@@ -102,4 +102,6 @@ go test -race ./...
 
 See the [reference](docs/reference.md#testing) for PostgreSQL integration tests and compatibility checks.
 
+CI runs for pull requests and pushes to `main`. After CI passes, pushes to `main` and manual runs on `main` publish an image, including test-only and configuration-only changes.
+
 Licensed under [MIT](LICENSE).
