@@ -80,6 +80,10 @@ jobs:
           CANDIDATE_URL=http://127.0.0.1:18080 bash tests/compatibility/run-upstream.sh
 
   publish:
+    concurrency:
+      group: ghcr-${{ github.repository }}
+      queue: max
+      cancel-in-progress: false
     needs: test
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -118,11 +122,3 @@ jobs:
         env:
           DIGEST: ${{ steps.image.outputs.digest }}
         run: echo "$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove old images
-        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f
-        with:
-          package: ${{ github.event.repository.name }}
-          keep-n-tagged: 10
-          keep-n-untagged: 10
-          exclude-tags: latest
-          delete-partial-images: true
